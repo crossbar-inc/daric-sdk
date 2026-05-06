@@ -44,8 +44,14 @@ extern "C"
 
 #define USB_CDC_ACM_INTERFACE 0x00
 #define USB_HID_INTERFACE     0x02
+// add new cdc acm
+#define USB_CDC_ACM_MPC_CMD_INTERFACE 0x02
+// add new cdc acm
+#define USB_CDC_ACM_MPC_DATA_INTERFACE 0x03
 
 #define USB_CDC_ACM_EP_NUM 0x01
+// add new cdc acm
+#define USB_CDC_ACM_EP_MPC_NUM 0x03
 #define USB_HID_EP_NUM     0x03
 
 #define USB_EP_NUMBER_MASK 0x0F

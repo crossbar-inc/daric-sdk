@@ -146,6 +146,8 @@ uint16_t count_one_bits(const uint8_t *inData, uint32_t inLen, uint8_t mode)
             }
         }
     }
+    if (j >= inLen)
+        return 0; /* all bytes are zero */
     return (i + 1) + (inLen - (j + 1)) * 8;
 }
 
@@ -806,7 +808,11 @@ bool            ecc_init(uint16_t modLen, uint8_t curveType)
 }
 
 /**
- * @brief pointOut = pointA + pointB. Not support pointA == pointB, use point multiplication instead.
+ * @brief pointOut = pointA + pointB.
+ *
+ * @note pointA and pointB must be distinct points (pointA != pointB).
+ *       For the point doubling case (pointA == pointB), use ecc_PointDouble() instead.
+ *       Passing equal points to this function triggers an assertion failure.
  *
  * @param pointA input ec point A
  * @param pointB input ec point B
@@ -838,6 +844,8 @@ void ecc_PointAdd(const uint32_t *pointA, const uint32_t *pointB, uint32_t *poin
 
     curve_len = curveBitLen / 8;
     pad_len   = curve_len + padByteNum;
+
+    assert(memcmp(pointA, pointB, curve_len * 2u) != 0); /* P1==P2 not supported; use ecc_PointDouble() instead */
 
 #ifdef PKE_DEBUG
     printf("padByteNum = %02x curve_len = %" PRIx32 " pad_len = %" PRIx32 "\r\n", padByteNum, curve_len, pad_len);
@@ -1072,6 +1080,12 @@ void ecc_PointDouble(const uint32_t *pointIn, uint32_t *pointOut, uint16_t curve
 /**
  * @brief pointOut = k * pointIn. length of k must be equal to curveBitLen / 8.
  *
+ * @note k must be >= 2. The hardware ECPM instruction uses OPTEW = bit-length of k to
+ *       control its Montgomery-ladder loop count; when k=1 (OPTEW=1) the loop executes
+ *       zero iterations and the output is garbage. Callers must handle k=1 explicitly
+ *       (i.e., return pointIn unchanged) before invoking this function.
+ *       Passing k=1 triggers an assertion failure.
+ *
  * @param k scalar multiplier. length of k must be equal to curveBitLen / 8.
  * @param pointIn input ec point
  * @param pointOut output ec point
@@ -1110,6 +1124,7 @@ void ecc_PointMul(const uint8_t *k, const uint32_t *pointIn, uint32_t *pointOut,
 
     memcpy(&tempBuf[144 / 2], (uint8_t *)k, curve_len);
     bitLen = count_one_bits(&tempBuf[144 / 2], curve_len, littleEnd);
+    assert(bitLen > 1); /* k=1 (OPTEW=1) not supported by ECPM hardware; caller must handle k=1 */
     SCE_PKE_OPTEW(bitLen);
 
 #ifdef PKE_LITTLE
@@ -1566,7 +1581,6 @@ void curve_rmodL(const uint8_t *in, uint32_t inLen, uint8_t *p, uint32_t pLen, u
     {
         memset((uint32_t *)ADDR_PKE_SEG_PIB + w_len_in, 0, 64 - inLen);
     }
-    bnu_print_mem("PIB1: ", (uint8_t *)ADDR_PKE_SEG_PIB, 64);
 
     // r2 (high 192bit)
     REG_SCE_PKE_PIB0 = 10;
@@ -1602,8 +1616,6 @@ void curve_rmodL(const uint8_t *in, uint32_t inLen, uint8_t *p, uint32_t pLen, u
     // r0 +r1 + r2 mod L  r0 low 128bit
     bnu_memcpy_u32((uint32_t *)ADDR_PKE_SEG_PIB, (uint32_t *)in, 4);
     memset((uint32_t *)ADDR_PKE_SEG_PIB + 4, 0, 64 - 4);
-
-    bnu_print_mem("PIB2: ", (uint8_t *)ADDR_PKE_SEG_PIB, 64);
 
     Ich_TranData(0, 0x0B, 0, 0x09, 8, 8);
 

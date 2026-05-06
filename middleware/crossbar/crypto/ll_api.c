@@ -101,7 +101,7 @@ extern uint32_t ALLF_DATA[4096/32];
  *
  * @param msg input message
  * @param msg_len message length
- * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_RIPEMD, HT_KECCAK, HT_BLAKE2B, HT_BLAKE2S
+ * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_RIPEMD, HT_SHA3_256, HT_SHA3_512, HT_BLAKE2B, HT_BLAKE2S
  * @param[out] digest digest length of black2b is 64bytes; digest length of black2s is 32bytes;
  * @return cr_status
  */
@@ -129,10 +129,12 @@ cr_status hash(const uint8_t *msg, uint32_t msg_len, hash_t hash_type, uint8_t *
             sha3(msg, msg_len, digest, 64);
             break;
         case HT_BLAKE2B:
-            blake2b(digest, BLAKE2B_OUTBYTES, msg, msg_len);
+            if (blake2b(digest, BLAKE2B_OUTBYTES, msg, msg_len) != 0)
+                ret = ERR_PARAMETERS;
             break;
         case HT_BLAKE2S:
-            blake2s(digest, BLAKE2S_OUTBYTES, msg, msg_len);
+            if (blake2s(digest, BLAKE2S_OUTBYTES, msg, msg_len) != 0)
+                ret = ERR_PARAMETERS;
             break;
         default:
             ret = ERR_PARAMETERS;
@@ -155,14 +157,14 @@ __attribute__((weak)) void ll_sce_unlock(void) { /* bare-metal: no-op */ }
  *
  */
 static int32_t hash_step_type = 0;
-static sha3_ctx_t sha3_ctx;
 
 /**
  * @brief calculate hash step by step: hash_Init() - hash_Update()(optional) - hash_Final()
  * msg can be supplied partly, applies to the msg from non-consecutive address
  * support SHA256 and SHA512 now, will support more hash type after verification
  *
- * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_RIPEMD, HT_KECCAK, HT_BLAKE2B, HT_BLAKE2S
+ * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_BLAKE2B, HT_BLAKE2S
+ *                  (HT_RIPEMD and HT_SHA3_* return ERR_NORESULT — use hash() for one-shot SHA3)
  * @return cr_status
  */
 cr_status hash_Init(hash_t hash_type)
@@ -183,12 +185,8 @@ cr_status hash_Init(hash_t hash_type)
             ret = ERR_NORESULT;
             break;
         case HT_SHA3_256:
-            memset(&sha3_ctx, 0, sizeof(sha3_ctx));
-            sha3_init(&sha3_ctx, 32);
-            break;
         case HT_SHA3_512:
-            memset(&sha3_ctx, 0, sizeof(sha3_ctx));
-            sha3_init(&sha3_ctx, 64);
+            ret = ERR_NORESULT;
             break;
         case HT_BLAKE2B:
             blake2b_init();
@@ -200,8 +198,11 @@ cr_status hash_Init(hash_t hash_type)
             ret = ERR_PARAMETERS;
             break;
     }
-    hash_step_type = hash_type + 1;
-    if (ret != ERR_NONE)
+    if (ret == ERR_NONE)
+    {
+        hash_step_type = hash_type + 1;
+    }
+    else
     {
         hash_step_type = 0;
         ll_sce_unlock();
@@ -214,7 +215,7 @@ cr_status hash_Init(hash_t hash_type)
  *
  * @param msg input message
  * @param msg_len message length
- * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_RIPEMD, HT_KECCAK, HT_BLAKE2B, HT_BLAKE2S
+ * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_RIPEMD, HT_SHA3_256, HT_SHA3_512, HT_BLAKE2B, HT_BLAKE2S
  * @return cr_status
  */
 cr_status hash_Update(const uint8_t *msg, uint32_t msg_len, hash_t hash_type)
@@ -222,8 +223,11 @@ cr_status hash_Update(const uint8_t *msg, uint32_t msg_len, hash_t hash_type)
     cr_status ret = ERR_NONE;
     if (hash_step_type != hash_type + 1)
     {
-        hash_step_type = 0;
-        ll_sce_unlock();
+        if (hash_step_type != 0)
+        {
+            hash_step_type = 0;
+            ll_sce_unlock();
+        }
         return ERR_STEP;
     }
     switch (hash_type)
@@ -236,19 +240,27 @@ cr_status hash_Update(const uint8_t *msg, uint32_t msg_len, hash_t hash_type)
             break;
         case HT_RIPEMD:
             ret = ERR_NORESULT;
-            break;
-        case HT_SHA3_256:
-        case HT_SHA3_512:
-            sha3_update(&sha3_ctx, msg, msg_len);
+            hash_step_type = 0;
+            ll_sce_unlock();
             break;
         case HT_BLAKE2B:
-            blake2b_update(msg, msg_len);
+            if (blake2b_update(msg, msg_len) != 0)
+            {
+                ret = ERR_PARAMETERS;
+                hash_step_type = 0;
+                ll_sce_unlock();
+            }
             break;
         case HT_BLAKE2S:
-            blake2s_update(msg, msg_len);
+            if (blake2s_update(msg, msg_len) != 0)
+            {
+                ret = ERR_PARAMETERS;
+                hash_step_type = 0;
+                ll_sce_unlock();
+            }
             break;
         default:
-            ret            = ERR_PARAMETERS;
+            ret = ERR_PARAMETERS;
             hash_step_type = 0;
             ll_sce_unlock();
             break;
@@ -261,7 +273,7 @@ cr_status hash_Update(const uint8_t *msg, uint32_t msg_len, hash_t hash_type)
  *
  * @param msg input message
  * @param msg_len message length
- * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_RIPEMD, HT_KECCAK, HT_BLAKE2B, HT_BLAKE2S
+ * @param hash_type supported hash type: HT_SHA256, HT_SHA512, HT_RIPEMD, HT_SHA3_256, HT_SHA3_512, HT_BLAKE2B, HT_BLAKE2S
  * @param[out] digest digest length of black2b is 64bytes; digest length of black2s is 32bytes;
  * @return cr_status
  */
@@ -270,8 +282,11 @@ cr_status hash_Final(const uint8_t *msg, uint32_t msg_len, hash_t hash_type, uin
     cr_status ret = ERR_NONE;
     if (hash_step_type != hash_type + 1)
     {
-        hash_step_type = 0;
-        ll_sce_unlock();
+        if (hash_step_type != 0)
+        {
+            hash_step_type = 0;
+            ll_sce_unlock();
+        }
         return ERR_STEP;
     }
     switch (hash_type)
@@ -285,18 +300,19 @@ cr_status hash_Final(const uint8_t *msg, uint32_t msg_len, hash_t hash_type, uin
         case HT_RIPEMD:
             ret = ERR_NORESULT;
             break;
-        case HT_SHA3_256:
-        case HT_SHA3_512:
-            sha3_update(&sha3_ctx, msg, msg_len);
-            sha3_final(digest, &sha3_ctx);
-            break;
         case HT_BLAKE2B:
-            blake2b_update(msg, msg_len);
-            blake2b_final(digest, BLAKE2B_OUTBYTES);
+            if (blake2b_update(msg, msg_len) != 0 ||
+                blake2b_final(digest, BLAKE2B_OUTBYTES) != 0)
+            {
+                ret = ERR_PARAMETERS;
+            }
             break;
         case HT_BLAKE2S:
-            blake2s_update(msg, msg_len);
-            blake2s_final(digest, BLAKE2S_OUTBYTES);
+            if (blake2s_update(msg, msg_len) != 0 ||
+                blake2s_final(digest, BLAKE2S_OUTBYTES) != 0)
+            {
+                ret = ERR_PARAMETERS;
+            }
             break;
         default:
             ret = ERR_PARAMETERS;
@@ -322,6 +338,10 @@ cr_status hmac(const uint8_t *key, uint32_t key_len, const uint8_t *msg, uint32_
 {
     uint32_t  msgCount;
     cr_status ret = ERR_NONE;
+
+    if ((key == NULL) || (msg == NULL) || (digest == NULL))
+        return ERR_PARAMETERS;
+
     ll_sce_lock();
     sce_Sysinit_Hash();
     hash_init();
@@ -373,8 +393,11 @@ cr_status hmac_KeyInit(const uint8_t *key, uint32_t key_len, hash_t hash_type)
             ret = ERR_PARAMETERS;
             break;
     }
-    hmac_step_type = (hash_type + 1) | 0x40000;
-    if (ret != ERR_NONE)
+    if (ret == ERR_NONE)
+    {
+        hmac_step_type = (hash_type + 1) | 0x40000;
+    }
+    else
     {
         hmac_step_type = 0;
         ll_sce_unlock();
@@ -396,8 +419,11 @@ cr_status hmac_Msg_Update(const uint8_t *msg, uint32_t msg_len, hash_t hash_type
 
     if (hmac_step_type != ((hash_type + 1) | 0x40000))
     {
-        hmac_step_type = 0;
-        ll_sce_unlock();
+        if (hmac_step_type != 0)
+        {
+            hmac_step_type = 0;
+            ll_sce_unlock();
+        }
         return ERR_STEP;
     }
     switch (hash_type)
@@ -429,8 +455,11 @@ cr_status hmac_Final(hash_t hash_type, uint8_t *digest)
     cr_status ret = ERR_NONE;
     if (hmac_step_type != ((hash_type + 1) | 0x40000))
     {
-        hmac_step_type = 0;
-        ll_sce_unlock();
+        if (hmac_step_type != 0)
+        {
+            hmac_step_type = 0;
+            ll_sce_unlock();
+        }
         return ERR_STEP;
     }
     switch (hash_type)
@@ -465,7 +494,7 @@ cr_status hmac_Final(hash_t hash_type, uint8_t *digest)
 cr_status aes_encrypt_le(AES_MODE_TYPE mode, const uint8_t *key, AES_KEY_LEN key_len, const uint8_t *iv, const uint8_t *input, uint32_t input_len, uint8_t *output)
 {
     cr_status ret = ERR_NONE;
-    int       result;
+    int       result = 0;
     uint8_t   keytype;
     uint8_t   data[16] = { 0 };
 
@@ -497,6 +526,7 @@ cr_status aes_encrypt_le(AES_MODE_TYPE mode, const uint8_t *key, AES_KEY_LEN key
             return ret;
     }
 
+    ll_sce_lock();
     sce_Sysinit_Aes();
     if (input_len >= 16)
     {
@@ -506,8 +536,65 @@ cr_status aes_encrypt_le(AES_MODE_TYPE mode, const uint8_t *key, AES_KEY_LEN key
     if ((result == (int)(input_len / 16 * 16)) && (input_len % 16 != 0))
     {
         memcpy(data, input + input_len / 16 * 16, input_len % 16);
-        result = AESOperation(key, key_len, output + input_len / 16 * 16, iv, data, 16, keytype, mode, AF_ENC);
+        /* data[input_len%16 .. 15] already zero from initialisation above */
+
+        /* Each mode needs a different IV for the second AESOperation call because
+         * AESOperation re-initialises the hardware (calls AESInit) on every
+         * invocation, discarding any internal chaining state.
+         *
+         * CTR  : advance the counter by the number of full blocks processed.
+         * CBC  : the chaining value is the last produced ciphertext block.
+         * CFB  : the feedback register is the last produced ciphertext block.
+         * OFB  : the intermediate keystream block is NOT stored in the output
+         *        buffer and cannot be recovered after AESOperation returns.
+         *        Partial-block OFB is therefore unsupported; return ERR_PARAMETERS.
+         * ECB  : no IV at all; partial_iv is unused (AESOperation ignores iv for ECB). */
+        const uint8_t *partial_iv = iv;
+        uint8_t        updated_iv[16];
+        uint32_t       n = input_len / 16;
+
+        if (mode == AES_CTR)
+        {
+            /* Advance the counter field (iv[8..15], big-endian uint64) by n. */
+            uint64_t ctr;
+            memcpy(updated_iv, iv, 16);
+            ctr = ((uint64_t)updated_iv[8]  << 56) |
+                  ((uint64_t)updated_iv[9]  << 48) |
+                  ((uint64_t)updated_iv[10] << 40) |
+                  ((uint64_t)updated_iv[11] << 32) |
+                  ((uint64_t)updated_iv[12] << 24) |
+                  ((uint64_t)updated_iv[13] << 16) |
+                  ((uint64_t)updated_iv[14] << 8)  |
+                  ((uint64_t)updated_iv[15]);
+            ctr += n;
+            updated_iv[8]  = (uint8_t)(ctr >> 56);
+            updated_iv[9]  = (uint8_t)(ctr >> 48);
+            updated_iv[10] = (uint8_t)(ctr >> 40);
+            updated_iv[11] = (uint8_t)(ctr >> 32);
+            updated_iv[12] = (uint8_t)(ctr >> 24);
+            updated_iv[13] = (uint8_t)(ctr >> 16);
+            updated_iv[14] = (uint8_t)(ctr >> 8);
+            updated_iv[15] = (uint8_t)(ctr);
+            partial_iv = updated_iv;
+        }
+        else if (mode == AES_CBC || mode == AES_CFB)
+        {
+            /* The chaining/feedback state after N full blocks is the last
+             * ciphertext block written to output. */
+            partial_iv = output + (n - 1u) * 16u;
+        }
+        else if (mode == AES_OFB)
+        {
+            /* OFB keystream state is internal to the hardware and not
+             * recoverable from the output buffer.  Partial-block OFB is
+             * unsupported; the caller must supply block-aligned input. */
+            ll_sce_unlock();
+            return ERR_PARAMETERS;
+        }
+
+        result = AESOperation(key, key_len, output + n * 16u, partial_iv, data, 16, keytype, mode, AF_ENC);
     }
+    ll_sce_unlock();
     if (result < 0)
     {
         ret = ERR_NORESULT;
@@ -563,12 +650,14 @@ cr_status aes_decrypt_le(AES_MODE_TYPE mode, const uint8_t *key, AES_KEY_LEN key
             keytype = AES_256;
             break;
         default:
-            ret = ERR_DATA_LENGTH;
+            ret = ERR_PARAMETERS;
             return ret;
     }
 
+    ll_sce_lock();
     sce_Sysinit_Aes();
     result = AESOperation(key, key_len, output, iv, input, input_len, keytype, mode, AF_DEC);
+    ll_sce_unlock();
 
     if (result < 0)
     {
@@ -593,10 +682,17 @@ cr_status modulo_add_le(const uint32_t *x, const uint32_t *y, const uint32_t *n,
 {
     bn_context_t ctx;
 
+    if ((x == NULL) || (y == NULL) || (n == NULL) || (result == NULL))
+    {
+        return ERR_PARAMETERS;
+    }
+
+    ll_sce_lock();
     sce_Sysinit_Pke();
     bn_addsub_initpro();
     bn_init(&ctx, n, n_len, false);
     bn_add_mod(&ctx, x, y, x_len, y_len, result);
+    ll_sce_unlock();
 
     return ERR_NONE;
 }
@@ -617,10 +713,17 @@ cr_status modulo_sub_le(const uint32_t *x, const uint32_t *y, const uint32_t *n,
 {
     bn_context_t ctx;
 
+    if ((x == NULL) || (y == NULL) || (n == NULL) || (result == NULL))
+    {
+        return ERR_PARAMETERS;
+    }
+
+    ll_sce_lock();
     sce_Sysinit_Pke();
     bn_addsub_initpro();
     bn_init(&ctx, n, n_len, false);
     bn_sub_mod(&ctx, x, y, x_len, y_len, result);
+    ll_sce_unlock();
 
     return ERR_NONE;
 }
@@ -641,9 +744,16 @@ cr_status modulo_multiply_le(const uint32_t *x, const uint32_t *y, const uint32_
 {
     bn_context_t ctx;
 
+    if ((x == NULL) || (y == NULL) || (n == NULL) || (result == NULL))
+    {
+        return ERR_PARAMETERS;
+    }
+
+    ll_sce_lock();
     sce_Sysinit_Pke();
     bn_init(&ctx, n, n_len, true);
     bn_mult_mod(&ctx, x, y, x_len, y_len, result);
+    ll_sce_unlock();
 
     return ERR_NONE;
 }
@@ -664,7 +774,12 @@ cr_status modulo_expo_le(const uint32_t *x, const uint32_t *y, const uint32_t *n
 {
     bn_context_t ctx;
 
-    /* if exponent is 0, result = 1 */
+    if ((x == NULL) || (y == NULL) || (n == NULL) || (result == NULL))
+    {
+        return ERR_PARAMETERS;
+    }
+
+    /* if exponent is 0, result = 1 (no hardware access needed) */
     if (bnu_is_zero(y, y_len))
     {
         memset(result, 0x0, n_len * sizeof(uint32_t));
@@ -672,9 +787,11 @@ cr_status modulo_expo_le(const uint32_t *x, const uint32_t *y, const uint32_t *n
         return ERR_NONE;
     }
 
+    ll_sce_lock();
     sce_Sysinit_Pke();
     bn_init(&ctx, n, n_len, true);
     bn_expo_mod_sn(&ctx, x, y, x_len, y_len, result);
+    ll_sce_unlock();
 
     return ERR_NONE;
 }
@@ -694,17 +811,19 @@ cr_status modulo_inverse_le(const uint32_t *x, const uint32_t *n, uint32_t x_len
     cr_status ret = ERR_NONE;
     int32_t   rn;
 
-    sce_Sysinit_Pke();
+    if ((x == NULL) || (n == NULL) || (result == NULL))
+    {
+        return ERR_PARAMETERS;
+    }
 
-    rn = bn_inv_mod(x, n, x_len, n_len, result); // return -1, if x and n are not relatively prime;
+    ll_sce_lock();
+    sce_Sysinit_Pke();
+    rn = bn_inv_mod(x, n, x_len, n_len, result);
+    ll_sce_unlock();
+
     if (rn == -1)
     {
-        /* x and n are not coprime */
-        ret = ERR_TIMEOUT;
-    }
-    else if (rn == -2)
-    {
-        /* N is even; hardware only support N is odd */
+        /* x and n are not coprime: hardware INV_READY bit never set */
         ret = ERR_PARAMETERS;
     }
     return ret;
@@ -726,6 +845,11 @@ cr_status modulo_inverse_le(const uint32_t *x, const uint32_t *n, uint32_t x_len
  */
 cr_status bndivision_le(const uint32_t *x, uint32_t xlen, const uint32_t *y, uint32_t ylen, uint32_t *q, uint32_t *qlen, uint32_t *r, uint32_t *rlen)
 {
+    if ((x == NULL) || (y == NULL))
+    {
+        return ERR_PARAMETERS;
+    }
+
     xlen = bnu_get_nzw_le(x, xlen); /* xlen and ylen must be the real length */
     ylen = bnu_get_nzw_le(y, ylen);
 
@@ -783,7 +907,10 @@ cr_status bndivision_le(const uint32_t *x, uint32_t xlen, const uint32_t *y, uin
         return ERR_NONE;
     }
 
-    return alu_division(x, y, xlen, ylen, q, qlen, r, rlen);
+    ll_sce_lock();
+    uint32_t rv = alu_division(x, y, xlen, ylen, q, qlen, r, rlen);
+    ll_sce_unlock();
+    return (rv != 0u) ? ERR_NORESULT : ERR_NONE;
 }
 
 /**
@@ -799,15 +926,20 @@ cr_status bndivision_le(const uint32_t *x, uint32_t xlen, const uint32_t *y, uin
  */
 cr_status gcd_le(const uint32_t *x, const uint32_t *y, uint32_t x_len, uint32_t y_len, uint32_t *result)
 {
-    cr_status ret = ERR_NONE;
+    if ((x == NULL) || (y == NULL) || (result == NULL))
+    {
+        return ERR_PARAMETERS;
+    }
     /* check Input not zero */
     if (bnu_is_zero(x, x_len) || bnu_is_zero(y, y_len))
     {
         return ERR_PARAMETERS;
     }
+    ll_sce_lock();
     sce_Sysinit_Pke();
     bn_gcd(x, y, x_len, y_len, result);
-    return ret;
+    ll_sce_unlock();
+    return ERR_NONE;
 }
 
 /**
@@ -820,6 +952,9 @@ cr_status gcd_le(const uint32_t *x, const uint32_t *y, uint32_t x_len, uint32_t 
 cr_status cv_get_prime_be(curve_type curve, uint32_t *prime)
 {
     cr_status ret = ERR_NONE;
+
+    if (prime == NULL)
+        return ERR_PARAMETERS;
 
     switch (curve)
     {
@@ -847,6 +982,10 @@ cr_status cv_get_prime_be(curve_type curve, uint32_t *prime)
 cr_status cv_get_order_be(curve_type curve, uint32_t *order)
 {
     cr_status ret = ERR_NONE;
+
+    if (order == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -873,6 +1012,10 @@ cr_status cv_get_order_be(curve_type curve, uint32_t *order)
 cr_status cv_get_order_half_be(curve_type curve, uint32_t *order_half)
 {
     cr_status ret = ERR_NONE;
+
+    if (order_half == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -899,6 +1042,9 @@ cr_status cv_get_order_half_be(curve_type curve, uint32_t *order_half)
 cr_status cv_get_a_be(curve_type curve, uint32_t *a)
 {
     cr_status ret = ERR_NONE;
+
+    if (a == NULL)
+        return ERR_PARAMETERS;
 
     switch (curve)
     {
@@ -929,6 +1075,9 @@ cr_status cv_get_b_be(curve_type curve, uint32_t *b)
 
     cr_status ret = ERR_NONE;
 
+    if (b == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -957,6 +1106,9 @@ cr_status cv_get_g_x_be(curve_type curve, uint32_t *x)
 {
     cr_status ret = ERR_NONE;
 
+    if (x == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -984,6 +1136,9 @@ cr_status cv_get_g_y_be(curve_type curve, uint32_t *y)
 {
     cr_status ret = ERR_NONE;
 
+    if (y == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -1010,6 +1165,9 @@ cr_status cv_get_g_y_be(curve_type curve, uint32_t *y)
 cr_status cv_get_prime_le(curve_type curve, uint32_t *prime)
 {
     cr_status ret = ERR_NONE;
+
+    if (prime == NULL)
+        return ERR_PARAMETERS;
 
     switch (curve)
     {
@@ -1040,6 +1198,10 @@ cr_status cv_get_prime_le(curve_type curve, uint32_t *prime)
 cr_status cv_get_order_le(curve_type curve, uint32_t *order)
 {
     cr_status ret = ERR_NONE;
+
+    if (order == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -1069,6 +1231,10 @@ cr_status cv_get_order_le(curve_type curve, uint32_t *order)
 cr_status cv_get_order_half_le(curve_type curve, uint32_t *order_half)
 {
     cr_status ret = ERR_NONE;
+
+    if (order_half == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -1096,13 +1262,15 @@ cr_status cv_get_a_le(curve_type curve, uint32_t *a)
 {
     cr_status ret = ERR_NONE;
 
+    if (a == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
             memset(a, 0, 32);
             break;
         case CT_SECP256R1:
-            memcpy(a, secp256r1_a, 32);
             bnu_swap_endian_2(secp256r1_a, a, 32);
             break;
         default:
@@ -1126,6 +1294,9 @@ cr_status cv_get_b_le(curve_type curve, uint32_t *b)
 
     cr_status ret = ERR_NONE;
 
+    if (b == NULL)
+        return ERR_PARAMETERS;
+
     switch (curve)
     {
         case CT_SECP256K1:
@@ -1144,15 +1315,18 @@ cr_status cv_get_b_le(curve_type curve, uint32_t *b)
 }
 
 /**
- * @brief get the d of the ed25519. av^2 + w^2 = 1 + dv^2 * w^2; big-endian
+ * @brief get the d of the ed25519. av^2 + w^2 = 1 + dv^2 * w^2; little-endian
  *
- * @param curve curve type: CT_SECP256K1, CT_SECP256R1
- * @param[out] a 32 bytes buffer to store a
+ * @param curve curve type: CT_ED25519
+ * @param[out] d 32 bytes buffer to store d
  * @return cr_status
  */
 cr_status cv_get_d_le(curve_type curve, uint32_t *d)
 {
     cr_status ret = ERR_NONE;
+
+    if (d == NULL)
+        return ERR_PARAMETERS;
 
     switch (curve)
     {
@@ -1177,6 +1351,9 @@ cr_status cv_get_d_le(curve_type curve, uint32_t *d)
 cr_status cv_get_g_x_le(curve_type curve, uint32_t *x)
 {
     cr_status ret = ERR_NONE;
+
+    if (x == NULL)
+        return ERR_PARAMETERS;
 
     switch (curve)
     {
@@ -1204,6 +1381,9 @@ cr_status cv_get_g_x_le(curve_type curve, uint32_t *x)
 cr_status cv_get_g_y_le(curve_type curve, uint32_t *y)
 {
     cr_status ret = ERR_NONE;
+
+    if (y == NULL)
+        return ERR_PARAMETERS;
 
     switch (curve)
     {
@@ -1263,20 +1443,28 @@ cr_status cv_modulo_add_le(curve_type curve, modulo_t modulo_type, const uint32_
     cr_status ret = ERR_NONE;
     uint32_t  modulo[8];
 
+    if ((x == NULL) || (y == NULL) || (result == NULL))
+        return ERR_PARAMETERS;
+
     if (modulo_type == MT_N)
-        cv_get_order_le(curve, modulo);
+        ret = cv_get_order_le(curve, modulo);
     else if (modulo_type == MT_P)
-        cv_get_prime_le(curve, modulo);
+        ret = cv_get_prime_le(curve, modulo);
     else
         return ERR_PARAMETERS;
+
+    if (ret != ERR_NONE)
+        return ret;
 
     switch (curve)
     {
         case CT_SECP256R1:
         case CT_SECP256K1:
         case CT_ED25519:
+            ll_sce_lock();
             sce_Sysinit_Pke();
-            curve_modular_add(modulo, x, y, result, CURVE_256); // fixme
+            curve_modular_add(modulo, x, y, result, CURVE_256);
+            ll_sce_unlock();
             break;
         default:
             ret = ERR_PARAMETERS;
@@ -1300,20 +1488,28 @@ cr_status cv_modulo_sub_le(curve_type curve, modulo_t modulo_type, const uint32_
     cr_status ret = ERR_NONE;
     uint32_t  modulo[8];
 
+    if ((x == NULL) || (y == NULL) || (result == NULL))
+        return ERR_PARAMETERS;
+
     if (modulo_type == MT_N)
-        cv_get_order_le(curve, modulo);
+        ret = cv_get_order_le(curve, modulo);
     else if (modulo_type == MT_P)
-        cv_get_prime_le(curve, modulo);
+        ret = cv_get_prime_le(curve, modulo);
     else
         return ERR_PARAMETERS;
+
+    if (ret != ERR_NONE)
+        return ret;
 
     switch (curve)
     {
         case CT_SECP256R1:
         case CT_SECP256K1:
         case CT_ED25519:
+            ll_sce_lock();
             sce_Sysinit_Pke();
             curve_modular_sub(modulo, x, y, result, CURVE_256);
+            ll_sce_unlock();
             break;
         default:
             ret = ERR_PARAMETERS;
@@ -1337,20 +1533,28 @@ cr_status cv_modulo_mul_le(curve_type curve, modulo_t modulo_type, const uint32_
     cr_status ret = ERR_NONE;
     uint32_t  modulo[8];
 
+    if ((x == NULL) || (y == NULL) || (result == NULL))
+        return ERR_PARAMETERS;
+
     if (modulo_type == MT_N)
-        cv_get_order_le(curve, modulo);
+        ret = cv_get_order_le(curve, modulo);
     else if (modulo_type == MT_P)
-        cv_get_prime_le(curve, modulo);
+        ret = cv_get_prime_le(curve, modulo);
     else
         return ERR_PARAMETERS;
+
+    if (ret != ERR_NONE)
+        return ret;
 
     switch (curve)
     {
         case CT_SECP256R1:
         case CT_SECP256K1:
         case CT_ED25519:
+            ll_sce_lock();
             sce_Sysinit_Pke();
-            curve_modular_mul(modulo, x, y, result, CURVE_256); // fixme
+            curve_modular_mul(modulo, x, y, result, CURVE_256);
+            ll_sce_unlock();
             break;
         default:
             ret = ERR_PARAMETERS;
@@ -1364,7 +1568,7 @@ cr_status cv_modulo_mul_le(curve_type curve, modulo_t modulo_type, const uint32_
  *
  * @param curve curve type: CT_SECP256K1, CT_SECP256R1, CT_ED25519
  * @param px pointer to px
- * @param py pointer to px
+ * @param py pointer to py
  * @param[out] result
  * @return cr_status
  */
@@ -1373,13 +1577,26 @@ cr_status point_add_le(curve_type curve, const uint32_t *px, const uint32_t *py,
     cr_status ret = ERR_NONE;
     pointDef  Res, A, B;
 
+    if ((px == NULL) || (py == NULL) || (result == NULL))
+        return ERR_PARAMETERS;
+
+    ll_sce_lock();
+
     switch (curve)
     {
         case CT_SECP256K1:
         case CT_SECP256R1:
             sce_Sysinit_Pke();
             cv_init(curve, 0);
-            ecc_PointAdd(px, py, result, CURVE_256);
+            if (memcmp(px, py, 64u) == 0)
+            {
+                /* P1==P2: chord formula is undefined; use tangent formula (point doubling) */
+                ecc_PointDouble(px, result, CURVE_256);
+            }
+            else
+            {
+                ecc_PointAdd(px, py, result, CURVE_256);
+            }
             break;
         case CT_ED25519:
             sce_Sysinit_Pke();
@@ -1397,6 +1614,8 @@ cr_status point_add_le(curve_type curve, const uint32_t *px, const uint32_t *py,
             ret = ERR_PARAMETERS;
             break;
     }
+
+    ll_sce_unlock();
     return ret;
 }
 
@@ -1415,13 +1634,26 @@ cr_status point_multiply_le(curve_type curve, const uint32_t *x, const uint32_t 
     pointDef  Res, B;
     uint16_t  bitLen;
 
+    if ((x == NULL) || (py == NULL) || (result == NULL))
+        return ERR_PARAMETERS;
+
+    ll_sce_lock();
+
     switch (curve)
     {
         case CT_SECP256R1:
         case CT_SECP256K1:
             sce_Sysinit_Pke();
             cv_init(curve, 0);
-            ecc_PointMul((uint8_t *)x, py, result, CURVE_256); /* fixme */
+            if (count_one_bits((uint8_t *)x, 32, littleEnd) == 1u)
+            {
+                /* k=1: hardware ECPM cannot handle OPTEW=1; 1*P == P */
+                memcpy(result, py, 64u);
+            }
+            else
+            {
+                ecc_PointMul((uint8_t *)x, py, result, CURVE_256);
+            }
             break;
         case CT_ED25519:
             sce_Sysinit_Pke();
@@ -1429,7 +1661,7 @@ cr_status point_multiply_le(curve_type curve, const uint32_t *x, const uint32_t 
             ed25519_init(bitLen);
             memcpy(B.x, py, 32);
             memcpy(B.y, py + 8, 32);
-            ed25519_PointMul((uint8_t *)x, &B, &Res); /* fixme */
+            ed25519_PointMul((uint8_t *)x, &B, &Res);
             memcpy(result, Res.x, 32);
             memcpy(result + 8, Res.y, 32);
             break;
@@ -1437,6 +1669,8 @@ cr_status point_multiply_le(curve_type curve, const uint32_t *x, const uint32_t 
             ret = ERR_PARAMETERS;
             break;
     }
+
+    ll_sce_unlock();
     return ret;
 }
 
@@ -1455,21 +1689,34 @@ cr_status scalar_multiply_le(curve_type curve, const uint32_t *x, uint32_t *resu
     pointDef  Res, G;
     uint16_t  bitLen;
 
+    if ((x == NULL) || (result == NULL))
+        return ERR_PARAMETERS;
+
+    ll_sce_lock();
+
     switch (curve)
     {
         case CT_SECP256R1:
         case CT_SECP256K1:
             sce_Sysinit_Pke();
             cv_init(curve, 0);
-            ecc_PointMul_Base((uint8_t *)x, result, CURVE_256);
+            if (count_one_bits((uint8_t *)x, 32, littleEnd) == 1u)
+            {
+                /* k=1: hardware ECPM cannot handle OPTEW=1; 1*G == G */
+                memcpy(result, ec_basePonitPtr, 64u);
+            }
+            else
+            {
+                ecc_PointMul_Base((uint8_t *)x, result, CURVE_256);
+            }
             break;
         case CT_ED25519:
             sce_Sysinit_Pke();
             bitLen = count_one_bits((uint8_t *)x, 32, littleEnd);
             ed25519_init(bitLen);
-            bnu_swap_endian_2("\x21\x69\x36\xD3\xCD\x6E\x53\xFE\xC0\xA4\xE2\x31\xFD\xD6\xDC\x5C\x69\x2C\xC7\x60\x95\x25\xA7\xB2\xC9\x56\x2D\x60\x8F\x25\xD5\x1A", G.x, 32);
-            bnu_swap_endian_2("\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x66\x58", G.y, 32);
-            ed25519_PointMul((uint8_t *)x, &G, &Res); /* fixme */
+            memcpy(G.x, ED25519_BASE_POINT, 32);
+            memcpy(G.y, ED25519_BASE_POINT + 8, 32);
+            ed25519_PointMul((uint8_t *)x, &G, &Res);
             memcpy(result, Res.x, 32);
             memcpy(result + 8, Res.y, 32);
             break;
@@ -1477,6 +1724,8 @@ cr_status scalar_multiply_le(curve_type curve, const uint32_t *x, uint32_t *resu
             ret = ERR_PARAMETERS;
             break;
     }
+
+    ll_sce_unlock();
     return ret;
 }
 
@@ -1544,6 +1793,7 @@ cr_status data_move_e(uint32_t rw, uint32_t segid, uint32_t seg_woff, uint32_t *
     return ret;
 }
 
+
 /**
  * @brief sdma move data between external memory and segment with security mode (security external)
  *
@@ -1582,9 +1832,18 @@ cr_status rng_init(void)
  */
 cr_status rng_buffer(uint32_t *buffer, uint32_t length)
 {
+    bool ok;
+
+    if (buffer == NULL)
+        return ERR_PARAMETERS;
+
     for (uint32_t retry = 0; retry < 10; retry++)
     {
-        if (!trng_continuous_contex_get_buffer(buffer, length))
+        ll_sce_lock();
+        ok = trng_continuous_contex_get_buffer(buffer, length);
+        ll_sce_unlock();
+
+        if (!ok)
         {
             printf("trng_continuous_contex_get_buffer: TimeOut\r\n");
             return ERR_TIMEOUT;
@@ -1608,6 +1867,9 @@ cr_status rng_buffer(uint32_t *buffer, uint32_t length)
  */
 void bn_random_limit_le(uint32_t *rand, uint32_t len, const uint32_t *lmt, uint32_t lmtlen)
 {
+    if (rand == NULL)
+        return;
+
     if (lmt == NULL)
     {
         rng_buffer(rand, len);
@@ -1615,7 +1877,7 @@ void bn_random_limit_le(uint32_t *rand, uint32_t len, const uint32_t *lmt, uint3
     }
     /* get bit length and word length of limit */
     uint32_t lmtbitlen = bnu_get_msb_le(lmt, lmtlen) + 1;
-    if (len < lmtbitlen / 32)
+    if (len < (lmtbitlen + 31) / 32)
     {
         rng_buffer(rand, len);
         return;

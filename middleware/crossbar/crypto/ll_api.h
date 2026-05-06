@@ -137,12 +137,6 @@ cr_status modulo_inverse_le(const uint32_t *x, const uint32_t *n, uint32_t x_len
 cr_status gcd_le(const uint32_t *x, const uint32_t *y, uint32_t x_len, uint32_t y_len, uint32_t *result);
 cr_status bndivision_le(const uint32_t *x, uint32_t xlen, const uint32_t *y, uint32_t ylen, uint32_t *q, uint32_t *qlen, uint32_t *r, uint32_t *rlen);
 
-cr_status point_add_be(curve_type curve, const uint32_t *px, const uint32_t *py, uint32_t *result);
-cr_status point_multiply_be(curve_type curve, const uint32_t *x, const uint32_t *py, uint32_t *result);
-cr_status scalar_multiply_be(curve_type curve, const uint32_t *x, uint32_t *result);
-cr_status cv_modulo_add_be(curve_type curve, modulo_t modulo_type, const uint32_t *x, const uint32_t *y, uint32_t *result);
-cr_status cv_modulo_sub_be(curve_type curve, modulo_t modulo_type, const uint32_t *x, const uint32_t *y, uint32_t *result);
-cr_status cv_modulo_mul_be(curve_type curve, modulo_t modulo_type, const uint32_t *x, const uint32_t *y, uint32_t *result);
 cr_status cv_get_prime_be(curve_type curve, uint32_t *prime);
 cr_status cv_get_order_be(curve_type curve, uint32_t *order);
 cr_status cv_get_order_half_be(curve_type curve, uint32_t *order_half);

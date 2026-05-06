@@ -99,6 +99,7 @@ static void ed25519_publickey(const uint8_t *private_key, uint8_t *public_key)
 static void ed25519_sign(const uint8_t *msg, uint32_t msgLen, const uint8_t *private_key, const uint8_t *public_key, uint8_t *signature)
 {
     uint32_t hash_buf[64 / 4], r[64 / 4], hram[64 / 4];
+    uint32_t r_mod[8], hram_mod[8];
     pointDef pointRes;
     uint8_t *hash_p = (uint8_t *)hash_buf;
 
@@ -115,11 +116,11 @@ static void ed25519_sign(const uint8_t *msg, uint32_t msgLen, const uint8_t *pri
 
     EDDSA_DUMP_BUFFER("HASH( HASH(private_key)[32:64] | MSG): ", r, 64);
 
-    bndivision_le(r, 16, ED25519_L, 8, NULL, NULL, r, NULL); // r = r mod L
+    bndivision_le(r, 16, ED25519_L, 8, NULL, NULL, r_mod, NULL); // r_mod = r mod L
 
-    EDDSA_DUMP_BUFFER("r mod L: ", r, 32);
+    EDDSA_DUMP_BUFFER("r mod L: ", r_mod, 32);
 
-    scalar_multiply_le(CT_ED25519, r, (uint32_t *)&pointRes);
+    scalar_multiply_le(CT_ED25519, r_mod, (uint32_t *)&pointRes);
     pointRes.y[31] ^= ((pointRes.x[0] & 1) << 7);
     memcpy(signature, pointRes.y, 32);
     EDDSA_DUMP_BUFFER("sig[:32]: ", signature, 32);
@@ -128,16 +129,16 @@ static void ed25519_sign(const uint8_t *msg, uint32_t msgLen, const uint8_t *pri
 
     EDDSA_DUMP_BUFFER("HASH ( R | A | MSG): ", hram, 64);
 
-    bndivision_le(hram, 16, ED25519_L, 8, NULL, NULL, hram, NULL); // hram = hram mod L
+    bndivision_le(hram, 16, ED25519_L, 8, NULL, NULL, hram_mod, NULL); // hram_mod = hram mod L
 
-    EDDSA_DUMP_BUFFER("hram mod L: ", hram, 32);
+    EDDSA_DUMP_BUFFER("hram mod L: ", hram_mod, 32);
 
-    // s = (r + h * a) % L = (r + hram*hash_buf) % L
-    cv_modulo_mul_le(CT_ED25519, MT_N, hram, hash_buf, hram);
+    // s = (r_mod + hram_mod * a) % L
+    cv_modulo_mul_le(CT_ED25519, MT_N, hram_mod, hash_buf, hram_mod);
 
-    EDDSA_DUMP_BUFFER("hram * hash_buf: ", hram, 32);
+    EDDSA_DUMP_BUFFER("hram * hash_buf: ", hram_mod, 32);
 
-    cv_modulo_add_le(CT_ED25519, MT_N, r, hram, (uint32_t *)(signature + 32));
+    cv_modulo_add_le(CT_ED25519, MT_N, r_mod, hram_mod, (uint32_t *)(signature + 32));
 
     EDDSA_DUMP_BUFFER("signature: ", signature, 64);
 }
@@ -261,7 +262,7 @@ static uint8_t ed25519_recover_x(uint8_t *px, uint8_t *py)
 
 static uint8_t ed25519_verify(const uint8_t *signature, uint8_t sigLen, const uint8_t *msg, uint32_t msgLen, const uint8_t *public_key, uint8_t pubKey_Len)
 {
-    uint32_t h[64 / 4];
+    uint32_t h[64 / 4], h_mod[8];
     pointDef A, R, sG, hA;
 
     if (sigLen != 64 || pubKey_Len != 32)
@@ -296,8 +297,8 @@ static uint8_t ed25519_verify(const uint8_t *signature, uint8_t sigLen, const ui
 
     // h =  H(R,A,M)
     ed25519_hashram((uint8_t *)signature, (uint8_t *)public_key, msg, msgLen, (uint8_t *)h);
-    bndivision_le(h, 64 / 4, ED25519_L, 8, NULL, NULL, (uint32_t *)h, NULL);
-    EDDSA_DUMP_BUFFER("h mod L: ", h, 32);
+    bndivision_le(h, 64 / 4, ED25519_L, 8, NULL, NULL, h_mod, NULL);
+    EDDSA_DUMP_BUFFER("h mod L: ", h_mod, 32);
 
     EDDSA_DUMP_BUFFER("S: ", signature + 32, 32);
     /* S*G = S[0:32] * G */
@@ -306,9 +307,9 @@ static uint8_t ed25519_verify(const uint8_t *signature, uint8_t sigLen, const ui
     EDDSA_DUMP_BUFFER("S*G.y: ", &sG.y, 32);
 
     /* ha = h * A */
-    point_multiply_le(CT_ED25519, h, (uint32_t *)&A, (uint32_t *)&hA);
+    point_multiply_le(CT_ED25519, h_mod, (uint32_t *)&A, (uint32_t *)&hA);
     EDDSA_DUMP_BUFFER("h*A.x: ", &hA.x, 32);
-    EDDSA_DUMP_BUFFER("h*A.x: ", &hA.y, 32);
+    EDDSA_DUMP_BUFFER("h*A.y: ", &hA.y, 32);
 
     /* R = R + h * A */
     point_add_le(CT_ED25519, (uint32_t *)&R, (uint32_t *)&hA, (uint32_t *)&R);
@@ -387,10 +388,11 @@ cr_status eddsa_verify(curve_type curve, uint32_t *pubkey, uint32_t *sig, uint32
     switch (curve)
     {
         case CT_ED25519:
-            ret = ed25519_verify((uint8_t *)sig, 64, (uint8_t *)msg, msgLen, (uint8_t *)pubkey, 32);
-            if (ret)
+            uint8_t result;
+            result = ed25519_verify((uint8_t *)sig, 64, (uint8_t *)msg, msgLen, (uint8_t *)pubkey, 32);
+            if (result != 0)
             {
-                printf("ed25519_verify failed %d\n", ret);
+                ret = ERR_VERIFY_FAIL;
             }
             break;
         default:

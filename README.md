@@ -28,6 +28,12 @@ Daric SDK is a comprehensive software development kit providing drivers, middlew
 - **Description**: Auxiliary tools and utilities, including flashing tools (`flash`), PC-side tools (`pc_tools`), and SVD files for debugging.
 
 
+## Hardware Resources
+
+For Daric hardware-related resources, please refer to the hardware repository:
+
+[https://github.com/crossbar-inc/daric-hardware](https://github.com/crossbar-inc/daric-hardware)
+
 ## Build Firmware
 
 ### Install toolchain

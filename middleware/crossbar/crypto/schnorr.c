@@ -30,11 +30,11 @@
  */
 
 #include "schnorr.h"
-// #ifdef DRV_SCE_ENABLED
 #include <string.h>
 #include <stdio.h>
 #include "hash.h"
 #include "ecdsa.h"
+#include "bn_util.h"
 
 #define SCHNORR_DBG 0
 
@@ -88,6 +88,17 @@ static uint8_t nonce_tag[13]     = "BIP0340/nonce";
 static uint8_t challenge_tag[17] = "BIP0340/challenge";
 /*  t be the byte-wise xor of bytes(d) and hashBIP0340/aux(a) ;
     k = hashBIP0340/nonce(t || bytes(P) || m) */
+/**
+ * @brief Generate a deterministic nonce k according to BIP-340.
+ *
+ * @param priv_key      Private key as a big-endian byte array (32 bytes).
+ * @param xonly_pubkey  X-only public key as a big-endian byte array (32 bytes).
+ * @param hash          Message digest as a big-endian byte array (32 bytes).
+ * @param[out] k        Generated nonce k (32 bytes).
+ *
+ * @note This implementation follows the BIP-340 recommendation for k generation:
+ *       k = hash_BIP0340/nonce(bytes(d) || bytes(P) || m)
+ */
 static void schnorr_generate_k(const uint32_t *priv_key, const uint32_t *xonly_pubkey, const uint32_t *hash, uint32_t *k)
 {
     uint8_t *key = (uint8_t *)priv_key;
@@ -118,6 +129,15 @@ static void schnorr_generate_k(const uint32_t *priv_key, const uint32_t *xonly_p
     return;
 }
 
+/**
+ * @brief Calculate the Schnorr challenge e = hash(R || P || m) according to BIP-340.
+ *
+ * @param curve     Elliptic curve (CT_SECP256K1).
+ * @param rx        X-coordinate of the commitment point R (32 bytes, big-endian).
+ * @param pubkey32  X-only public key P (32 bytes, big-endian).
+ * @param digest    Message digest m (32 bytes, big-endian).
+ * @param[out] e    Resulting challenge e mod n (32 bytes, little-endian).
+ */
 static void schnorr_calculate_e(curve_type curve, const uint8_t *rx, const uint8_t *pubkey32, const uint8_t *digest, uint32_t *e)
 {
     uint32_t order[8];
@@ -130,21 +150,26 @@ static void schnorr_calculate_e(curve_type curve, const uint8_t *rx, const uint8
 
     /* e = e mod n*/
     sce_Sysinit_Pke();
-    cv_get_order_be(curve, order);
-    // curve_rmodL((uint8_t *)e,
-    //             32,
-    //             bigEnd,
-    //             (uint8_t *)order,
-    //             32,
-    //             bigEnd,
-    //             (uint8_t *)e,
-    //             bigEnd);
+    cv_get_order_le(curve, order);
+    bnu_swap_endian_1(e, 32);
     curve_rmodL((uint8_t *)e, 32, (uint8_t *)order, 32, (uint8_t *)e);
 
     SCHNORR_DUMP_BUFFER("e: ", e, 32);
 }
 
-/* secret key should have an even Y*/
+/**
+ * @brief Sign a message digest using Schnorr signature (BIP-340).
+ *
+ * @param curve    Elliptic curve (CT_SECP256K1).
+ * @param priv_key Private key as a big-endian byte array (32 bytes).
+ * @param digest   Message digest as a big-endian byte array (32 bytes).
+ * @param[out] sig Signature output: 64 bytes (r || s), both big-endian.
+ *
+ * @return 0 on success, -1 on failure.
+ *
+ * @note This function ensures d = n - d if P has an odd y-coordinate,
+ *       and k = n - k if R has an odd y-coordinate, as per BIP-340.
+ */
 int32_t schnorr_sign_digest(curve_type curve, const uint32_t *priv_key, const uint32_t *digest, uint32_t *sig)
 {
     // uint32_t pub_key[8];
@@ -153,12 +178,14 @@ int32_t schnorr_sign_digest(curve_type curve, const uint32_t *priv_key, const ui
     uint32_t k[8];
     uint32_t d[8];
     uint32_t e[8];
+    uint32_t pk_x_be[8];
+    uint32_t d_be[8];
 
-    cv_get_order_be(curve, order);
+    cv_get_order_le(curve, order);
     SCHNORR_DUMP_BUFFER("order: ", order, 32);
     /* pk = d * G */
-    memcpy(d, priv_key, 32);
-    scalar_multiply_be(curve, d, (uint32_t *)(&pk));
+    bnu_swap_endian_2(priv_key, d, 32);
+    scalar_multiply_le(curve, d, (uint32_t *)(&pk));
 
     SCHNORR_DUMP_BUFFER("pk.y: ", pk.y, 32);
     /* let d = d if has_even_y(P), otherwise let d = n - d */
@@ -166,26 +193,22 @@ int32_t schnorr_sign_digest(curve_type curve, const uint32_t *priv_key, const ui
     {
         SCHNORR_DEBUG("Pubkey not even\r\n");
         // return -1;
-        cv_modulo_sub_be(curve, MT_N, order, d, d);
+        cv_modulo_sub_le(curve, MT_N, order, d, d);
         SCHNORR_DUMP_BUFFER("d = n - d: ", d, 32);
     }
 
-    schnorr_generate_k(d, (uint32_t *)pk.x, digest, k);
+    bnu_swap_endian_2(d, d_be, 32);
+    bnu_swap_endian_2(pk.x, pk_x_be, 32);
+    schnorr_generate_k(d_be, pk_x_be, digest, k);
+    /* k is produced by hashing, so it's in BE. swap to LE for modulo calculation. */
+    bnu_swap_endian_1(k, 32);
     SCHNORR_DUMP_BUFFER("k: ", k, 32);
 
     /* k = k mod n*/
     sce_Sysinit_Pke();
     SCHNORR_DUMP_BUFFER("order: ", order, 32);
-    // curve_rmodL((uint8_t *)k,
-    //             32,
-    //             bigEnd,
-    //             (uint8_t *)order,
-    //             32,
-    //             bigEnd,
-    //             (uint8_t *)k,
-    //             bigEnd);
     curve_rmodL((uint8_t *)k, 32, (uint8_t *)order, 32, (uint8_t *)k);
-    cv_get_order_be(curve, order); // FIXME: curve_rmodL broke the 'order'
+    cv_get_order_le(curve, order); // FIXME: curve_rmodL broke the 'order'
     SCHNORR_DUMP_BUFFER("order: ", order, 32);
     SCHNORR_DUMP_BUFFER("k = k mod n: ", k, 32);
 
@@ -196,7 +219,7 @@ int32_t schnorr_sign_digest(curve_type curve, const uint32_t *priv_key, const ui
     }
 
     /* R = k * G */
-    scalar_multiply_be(curve, k, (uint32_t *)(&r));
+    scalar_multiply_le(curve, k, (uint32_t *)(&r));
     SCHNORR_DUMP_BUFFER("r.x: ", r.x, 32);
     SCHNORR_DUMP_BUFFER("r.y: ", r.y, 32);
 
@@ -204,21 +227,35 @@ int32_t schnorr_sign_digest(curve_type curve, const uint32_t *priv_key, const ui
     if (num_256_is_odd((uint32_t *)r.y))
     {
         SCHNORR_DEBUG("R not even\r\n");
-        cv_modulo_sub_be(curve, MT_N, order, k, k);
+        cv_modulo_sub_le(curve, MT_N, order, k, k);
         SCHNORR_DUMP_BUFFER("k = n - k: ", k, 32);
     }
 
-    schnorr_calculate_e(curve, r.x, pk.x, (uint8_t *)digest, e);
+    uint32_t rx_be[8];
+    bnu_swap_endian_2(r.x, rx_be, 32);
+    schnorr_calculate_e(curve, (uint8_t *)rx_be, (uint8_t *)pk_x_be, (uint8_t *)digest, e);
+    /* schnorr_calculate_e produced e as LE (due to bnu_swap_endian_1 inside it). */
 
-    cv_modulo_mul_be(curve, MT_N, e, d, e);
-    cv_modulo_add_be(curve, MT_N, k, e, e);
-    memcpy(sig, r.x, 32);
-    memcpy(sig + 8, e, 32);
+    cv_modulo_mul_le(curve, MT_N, e, d, e);
+    cv_modulo_add_le(curve, MT_N, k, e, e);
+
+    /* Output high-level signature in BE. */
+    bnu_swap_endian_2(r.x, sig, 32);
+    bnu_swap_endian_2(e, sig + 8, 32);
 
     return 0;
 }
 
-// TODO: support x-only public key
+/**
+ * @brief Verify a Schnorr signature (BIP-340).
+ *
+ * @param curve     Elliptic curve (CT_SECP256K1).
+ * @param xonly_pub X-only public key as a big-endian byte array (32 bytes).
+ * @param digest    Message digest as a big-endian byte array (32 bytes).
+ * @param signature Signature to verify: 64 bytes (r || s), both big-endian.
+ *
+ * @return 0 on success, negative value on failure.
+ */
 int schnorr_verify_digest(curve_type curve, const uint32_t *xonly_pub, const uint32_t *digest, const uint32_t *signature)
 {
     uint32_t prime[8];
@@ -226,13 +263,16 @@ int schnorr_verify_digest(curve_type curve, const uint32_t *xonly_pub, const uin
     uint32_t r[8];
     uint32_t s[8];
     uint32_t e[8];
+    uint32_t dig_le[8];
     pointDef pk, sg, R;
 
-    memcpy(r, signature, 32);
-    memcpy(s, signature + 8, 32);
+    bnu_swap_endian_2(signature, r, 32);
+    bnu_swap_endian_2(signature + 8, s, 32);
+    bnu_swap_endian_2(digest, dig_le, 32);
 
-    cv_get_order_be(curve, order);
-    cv_get_prime_be(curve, prime);
+    cv_get_order_le(curve, order);
+    cv_get_prime_le(curve, prime);
+
     if (!num_256_is_less((uint8_t *)r, (uint8_t *)prime) || !num_256_is_less((uint8_t *)s, (uint8_t *)order))
     {
         return -1;
@@ -247,24 +287,24 @@ int schnorr_verify_digest(curve_type curve, const uint32_t *xonly_pub, const uin
     SCHNORR_DUMP_BUFFER("r: ", r, 32);
     SCHNORR_DUMP_BUFFER("pkx: ", pk.x, 32);
     SCHNORR_DUMP_BUFFER("pky: ", pk.y, 32);
-    schnorr_calculate_e(curve, (uint8_t *)r, pk.x, (uint8_t *)digest, e);
+    schnorr_calculate_e(curve, (uint8_t *)signature, (uint8_t *)xonly_pub, (uint8_t *)digest, e);
 
     /* R = sG - eP;     sg = s * G */
-    scalar_multiply_be(curve, s, (uint32_t *)&sg);
+    scalar_multiply_le(curve, s, (uint32_t *)&sg);
     SCHNORR_DUMP_BUFFER("sg.x: ", sg.x, 32);
     SCHNORR_DUMP_BUFFER("sg.y: ", sg.y, 32);
 
     /* e = -e */
-    cv_modulo_sub_be(curve, MT_N, order, e, e);
+    cv_modulo_sub_le(curve, MT_N, order, e, e);
     SCHNORR_DUMP_BUFFER("-e: ", e, 32);
 
     /* R = pk * e */
-    point_multiply_be(curve, e, (uint32_t *)&pk, (uint32_t *)&R);
+    point_multiply_le(curve, e, (uint32_t *)&pk, (uint32_t *)&R);
     SCHNORR_DUMP_BUFFER("pke.x: ", R.x, 32);
     SCHNORR_DUMP_BUFFER("pke.y: ", R.y, 32);
 
     /* R = sg + R*/
-    point_add_be(curve, (uint32_t *)&sg, (uint32_t *)&R, (uint32_t *)&R);
+    point_add_le(curve, (uint32_t *)&sg, (uint32_t *)&R, (uint32_t *)&R);
     SCHNORR_DUMP_BUFFER("r.x: ", R.x, 32);
     SCHNORR_DUMP_BUFFER("r.y: ", R.y, 32);
 
@@ -285,5 +325,3 @@ int schnorr_verify_digest(curve_type curve, const uint32_t *xonly_pub, const uin
 
     return 0;
 }
-
-// #endif

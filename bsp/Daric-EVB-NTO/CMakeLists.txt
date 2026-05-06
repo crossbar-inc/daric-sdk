@@ -86,6 +86,11 @@ if(CONFIG_NFC)
     target_link_libraries(${CONFIG_BOARD} PRIVATE NFC)
 endif()
 
+# BT
+if(CONFIG_BT)
+    target_sources(${CONFIG_BOARD} PRIVATE daric_bt.c)
+endif()
+
 # USB
 if(CONFIG_USB_DETEC)
     target_sources(${CONFIG_BOARD} PRIVATE ./daric_evb_nto_usb.c)

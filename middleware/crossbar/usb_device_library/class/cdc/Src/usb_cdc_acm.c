@@ -52,7 +52,11 @@
 #define MAX_PARITY       2
 #define MAX_FLOW_CONTROL 2
 
+#ifdef CONFIG_FIDO_USB_HID
 #define USB_CDC_ACM_NUM 1
+#else
+#define USB_CDC_ACM_NUM 2
+#endif
 // #define DEVDBG
 #ifdef DEVDBG
 #define USB_LOG(format, ...) printf(format, ##__VA_ARGS__)
@@ -92,9 +96,16 @@ static const struct usb_device_descriptor cdc_device_desc = {
     .bDescriptorType = USB_DT_DEVICE,
 
     .bcdUSB             = 0x0200,
+#ifdef CONFIG_FIDO_USB_HID
     .bDeviceClass       = 0x02,
     .bDeviceSubClass    = 0x02,
     .bDeviceProtocol    = 0x00,
+#else
+    .bDeviceClass       = 0xEF,
+    .bDeviceSubClass    = 0x02,
+    .bDeviceProtocol    = 0x01,
+#endif
+
     .bMaxPacketSize0    = 0x40,
     .idVendor           = USB_VENDOR_ID,
     .idProduct          = USB_PRODUCT_ID,
@@ -114,7 +125,7 @@ static const struct usb_cdc_config_descriptor cdc_config_desc = {
                .iConfiguration = 0x00U,
                .bmAttributes = 0xC0U,
                .bMaxPower = 0x32U},
-
+#ifdef CONFIG_FIDO_USB_HID
     .itf_ass =
         {
             .bLength = sizeof(struct usb_interface_association_descriptor),
@@ -207,12 +218,229 @@ static const struct usb_cdc_config_descriptor cdc_config_desc = {
                         .bEndpointAddress = USB_CDC_ACM_EP_IN,
                         .bmAttributes = USB_EP_XFER_BULK,
                         .wMaxPacketSize = 0x200,
-                        .bInterval = 0x00U}};
+                        .bInterval = 0x00U}
+#else
+    .itf_ass =
+        {
+            .bLength = sizeof(struct usb_interface_association_descriptor),
+            .bDescriptorType = USB_DT_INTERFACE_ASSOCIATION,
+            .bFirstInterface = USB_CDC_ACM_INTERFACE,
+            .bInterfaceCount = 0x02,
+            .bFunctionClass = 0x02,
+            .bFunctionSubClass = 0x02,
+            .bFunctionProtocol = 0x01,
+            .iFunction = 0x00,
+        },
 
-static cdc_acm_t s_cdc_acm[USB_CDC_ACM_NUM] = { {
-    .ep_num = 1,
-    .if_num = USB_CDC_ACM_INTERFACE,
-} };
+    .cmd_itf = {.bLength = sizeof(struct usb_interface_descriptor),
+                .bDescriptorType = USB_DT_INTERFACE,
+                .bInterfaceNumber = USB_CDC_ACM_INTERFACE,
+                .bAlternateSetting = 0x00U,
+                .bNumEndpoints = 0x01U,
+                .bInterfaceClass = USB_CLASS_CDC,
+                .bInterfaceSubClass = USB_CDC_SUBCLASS_ACM,
+                .bInterfaceProtocol = USB_CDC_PROTOCOL_AT,
+                .iInterface = 0x00U},
+
+    .cdc_header = {.header =
+                       {
+                           .bLength = sizeof(struct usb_header_func_descriptor),
+                           .bDescriptorType = USB_DT_PIPE_USAGE,
+                       },
+                   .bDescriptorSubtype = 0x00U,
+                   .bcdCDC = 0x0110U},
+
+    .cdc_call_managment =
+        {.header =
+             {
+                 .bLength = sizeof(struct usb_call_management_func_descriptor),
+                 .bDescriptorType = USB_DT_PIPE_USAGE,
+             },
+         .bDescriptorSubtype = 0x01U,
+         .bmCapabilities = 0x00U,
+         .bDataInterface = 0x01U},
+
+    .cdc_acm =
+        {
+            .header =
+                {
+                    .bLength = sizeof(struct usb_acm_func_descriptor),
+                    .bDescriptorType = USB_DT_PIPE_USAGE,
+                },
+            .bDescriptorSubtype = 0x02U,
+            .bmCapabilities = 0x02U,
+        },
+
+    .cdc_union =
+        {
+            .header =
+                {
+                    .bLength = sizeof(struct usb_union_func_descriptor),
+                    .bDescriptorType = USB_DT_PIPE_USAGE,
+                },
+            .bDescriptorSubtype = 0x06U,
+            .bMasterInterface = 0x00U,
+            .bSlaveInterface0 = 0x01U,
+        },
+
+    .cdc_cmd_endpoint = {.bLength = sizeof(struct usb_endpoint_descriptor),
+                         .bDescriptorType = USB_DT_ENDPOINT,
+                         .bEndpointAddress = USB_CDC_ACM_EP_CMD,
+                         .bmAttributes = USB_EP_XFER_INTERRUPT,
+                         .wMaxPacketSize = 0x0A,
+                         .bInterval = 0x10U},
+
+    .cdc_data_interface = {.bLength = sizeof(struct usb_interface_descriptor),
+                           .bDescriptorType = USB_DT_INTERFACE,
+                           .bInterfaceNumber = 0x01U,
+                           .bAlternateSetting = 0x00U,
+                           .bNumEndpoints = 0x02U,
+                           .bInterfaceClass = USB_CLASS_DATA,
+                           .bInterfaceSubClass = 0x00U,
+                           .bInterfaceProtocol = USB_CDC_PROTOCOL_NONE,
+                           .iInterface = 0x00U},
+
+    .cdc_out_endpoint = {.bLength = sizeof(struct usb_endpoint_descriptor),
+                         .bDescriptorType = USB_DT_ENDPOINT,
+                         .bEndpointAddress = USB_CDC_ACM_EP_OUT,
+                         .bmAttributes = USB_EP_XFER_BULK,
+                         .wMaxPacketSize = 0x200,
+                         .bInterval = 0x00U},
+
+    .cdc_in_endpoint = {.bLength = sizeof(struct usb_endpoint_descriptor),
+                        .bDescriptorType = USB_DT_ENDPOINT,
+                        .bEndpointAddress = USB_CDC_ACM_EP_IN,
+                        .bmAttributes = USB_EP_XFER_BULK,
+                        .wMaxPacketSize = 0x200,
+                        .bInterval = 0x00U},
+
+#endif
+};
+
+#ifndef CONFIG_FIDO_USB_HID
+static const struct usb_cdc_config_descriptor cdc_config_desc_mpc = {
+    .config = {.bLength = sizeof(struct usb_configuration_descriptor),
+               .bDescriptorType = USB_DT_CONFIG, /* Configuration */
+               .wTotalLength = 0x4B,
+
+               .bNumInterfaces = 0x02U,
+
+               .bConfigurationValue = 0x01U,
+               .iConfiguration = 0x00U,
+               .bmAttributes = 0xC0U,
+               .bMaxPower = 0x32U},
+    .itf_ass =
+        {
+            .bLength = sizeof(struct usb_interface_association_descriptor),
+            .bDescriptorType = USB_DT_INTERFACE_ASSOCIATION,
+            .bFirstInterface = USB_CDC_ACM_MPC_CMD_INTERFACE,
+            .bInterfaceCount = 0x02,
+            .bFunctionClass = 0x02,
+            .bFunctionSubClass = 0x02,
+            .bFunctionProtocol = 0x01,
+            .iFunction = 0x00,
+        },
+
+    .cmd_itf = {.bLength = sizeof(struct usb_interface_descriptor),
+                .bDescriptorType = USB_DT_INTERFACE,
+                .bInterfaceNumber = USB_CDC_ACM_MPC_CMD_INTERFACE,
+                .bAlternateSetting = 0x00U,
+                .bNumEndpoints = 0x01U,
+                .bInterfaceClass = USB_CLASS_CDC,
+                .bInterfaceSubClass = USB_CDC_SUBCLASS_ACM,
+                .bInterfaceProtocol = USB_CDC_PROTOCOL_AT,
+                .iInterface = 0x00U},
+
+    .cdc_header = {.header =
+                       {
+                           .bLength = sizeof(struct usb_header_func_descriptor),
+                           .bDescriptorType = USB_DT_PIPE_USAGE,
+                       },
+                   .bDescriptorSubtype = 0x00U,
+                   .bcdCDC = 0x0110U},
+
+    .cdc_call_managment =
+        {.header =
+             {
+                 .bLength = sizeof(struct usb_call_management_func_descriptor),
+                 .bDescriptorType = USB_DT_PIPE_USAGE,
+             },
+         .bDescriptorSubtype = 0x01U,
+         .bmCapabilities = 0x00U,
+         .bDataInterface = USB_CDC_ACM_MPC_DATA_INTERFACE},
+
+    .cdc_acm =
+        {
+            .header =
+                {
+                    .bLength = sizeof(struct usb_acm_func_descriptor),
+                    .bDescriptorType = USB_DT_PIPE_USAGE,
+                },
+            .bDescriptorSubtype = 0x02U,
+            .bmCapabilities = 0x02U,
+        },
+
+    .cdc_union =
+        {
+            .header =
+                {
+                    .bLength = sizeof(struct usb_union_func_descriptor),
+                    .bDescriptorType = USB_DT_PIPE_USAGE,
+                },
+            .bDescriptorSubtype = 0x06U,
+            .bMasterInterface = USB_CDC_ACM_MPC_CMD_INTERFACE,
+            .bSlaveInterface0 = USB_CDC_ACM_MPC_DATA_INTERFACE,
+        },
+
+    .cdc_cmd_endpoint = {.bLength = sizeof(struct usb_endpoint_descriptor),
+                         .bDescriptorType = USB_DT_ENDPOINT,
+                         .bEndpointAddress = USB_CDC_ACM_EP_MPC_CMD,
+                         .bmAttributes = USB_EP_XFER_INTERRUPT,
+                         .wMaxPacketSize = 0x0A,
+                         .bInterval = 0x10U},
+
+    .cdc_data_interface = {.bLength = sizeof(struct usb_interface_descriptor),
+                           .bDescriptorType = USB_DT_INTERFACE,
+                           .bInterfaceNumber = USB_CDC_ACM_MPC_DATA_INTERFACE,
+                           .bAlternateSetting = 0x00U,
+                           .bNumEndpoints = 0x02U,
+                           .bInterfaceClass = USB_CLASS_DATA,
+                           .bInterfaceSubClass = 0x00U,
+                           .bInterfaceProtocol = USB_CDC_PROTOCOL_NONE,
+                           .iInterface = 0x00U},
+
+    .cdc_out_endpoint = {.bLength = sizeof(struct usb_endpoint_descriptor),
+                         .bDescriptorType = USB_DT_ENDPOINT,
+                         .bEndpointAddress = USB_CDC_ACM_EP_MPC_OUT,
+                         .bmAttributes = USB_EP_XFER_BULK,
+                         .wMaxPacketSize = 0x200,
+                         .bInterval = 0x00U},
+
+    .cdc_in_endpoint = {.bLength = sizeof(struct usb_endpoint_descriptor),
+                        .bDescriptorType = USB_DT_ENDPOINT,
+                        .bEndpointAddress = USB_CDC_ACM_EP_MPC_IN,
+                        .bmAttributes = USB_EP_XFER_BULK,
+                        .wMaxPacketSize = 0x200,
+                        .bInterval = 0x00U}};
+#endif
+
+static cdc_acm_t s_cdc_acm[USB_CDC_ACM_NUM] = {
+#ifdef CONFIG_FIDO_USB_HID
+    {
+        .ep_num = 1,
+        .if_num = USB_CDC_ACM_INTERFACE,
+    }
+#else
+    {
+        .ep_num = 1,
+        .if_num = USB_CDC_ACM_INTERFACE,
+    },
+    {
+        .ep_num = 3,
+        .if_num = USB_CDC_ACM_MPC_CMD_INTERFACE,
+    }
+#endif
+};
 
 static int cdc_acm_request_handler(struct usb_control_request *setup)
 {
@@ -379,6 +607,27 @@ static int cdc_acm_get_config_descriptor(uint8_t *buf, uint16_t length)
     return offset;
 }
 
+#ifndef CONFIG_FIDO_USB_HID
+static int cdc_acm_mpc_get_config_descriptor(uint8_t *buf, uint16_t length)
+{
+    int offset = 0;
+
+    if (!buf || !length)
+    {
+      return -1;
+    }
+
+    if (length < sizeof(cdc_config_desc_mpc))
+      memcpy(buf + offset, &cdc_config_desc_mpc, length);
+    else
+      memcpy(buf + offset, &cdc_config_desc_mpc, sizeof(cdc_config_desc_mpc));
+
+    offset += sizeof(cdc_config_desc_mpc);
+
+    return offset;
+}
+#endif
+
 static int cdc_acm_get_interface_descriptor(uint8_t *buf, uint16_t length)
 {
     uint16_t copy_len          = 0;
@@ -416,6 +665,48 @@ static int cdc_acm_get_interface_ass_descriptor(uint8_t *buf, uint16_t length)
 
     return descriptor_length;
 }
+#ifndef CONFIG_FIDO_USB_HID
+static int cdc_acm_mpc_get_interface_descriptor(uint8_t *buf, uint16_t length)
+{
+    uint16_t copy_len = 0;
+    size_t descriptor_length = sizeof(cdc_config_desc_mpc) -
+                               sizeof(cdc_config_desc_mpc.config) -
+                               sizeof(cdc_config_desc_mpc.itf_ass);
+
+    if (!buf)
+    {
+      return -1;
+    }
+
+    if (length != 0)
+    {
+      copy_len = length > descriptor_length ? descriptor_length : length;
+      memcpy(buf, &cdc_config_desc_mpc.cmd_itf, copy_len);
+    }
+
+    return descriptor_length;
+}
+
+static int cdc_acm_mpc_get_interface_ass_descriptor(uint8_t *buf, uint16_t length)
+{
+    uint16_t copy_len = 0;
+    size_t descriptor_length = sizeof(cdc_config_desc_mpc.itf_ass);
+
+    if (!buf)
+    {
+      return -1;
+    }
+
+    if (length != 0)
+    {
+      copy_len = length > descriptor_length ? descriptor_length : length;
+      memcpy(buf, &cdc_config_desc_mpc.itf_ass, copy_len);
+    }
+
+    return descriptor_length;
+}
+
+#endif
 
 /**
  * @brief  CDC-ACM class initialization (e.g., class registration, resource
@@ -440,7 +731,24 @@ int usb_cdc_acm_init(void)
         .request_handler              = cdc_acm_request_handler,
     };
 
+#ifndef CONFIG_FIDO_USB_HID
+    struct usb_class_callback_t cdc_acm_mpc_callbacks = {
+        .get_dev_descriptor = cdc_acm_get_dev_descriptor,
+        .get_config_descriptor = cdc_acm_mpc_get_config_descriptor,
+
+        .get_interface_descriptor = cdc_acm_mpc_get_interface_descriptor,
+        .get_interface_ass_descriptor = cdc_acm_mpc_get_interface_ass_descriptor,
+
+        .ep_complete = cdc_acm_ep_complete,
+        .ep0_complete = cdc_acm_ep0_complete,
+        .request_handler = cdc_acm_request_handler,
+    };
+#endif
+
     usb_class_register(USB_CDC_ACM_EP_NUM, cdc_acm_callbacks);
+#ifndef CONFIG_FIDO_USB_HID
+    usb_class_register(USB_CDC_ACM_EP_MPC_NUM, cdc_acm_mpc_callbacks);
+#endif
 
     for (int i = 0; i < USB_CDC_ACM_NUM; i++)
     {
@@ -480,6 +788,9 @@ int usb_cdc_acm_uninit(void)
     usb_uninitialize();
 
     usb_class_unregister(USB_CDC_ACM_EP_NUM);
+#ifndef CONFIG_FIDO_USB_HID
+    usb_class_unregister(USB_CDC_ACM_EP_MPC_NUM);
+#endif
 
     for (int i = 0; i < USB_CDC_ACM_NUM; i++)
     {
@@ -595,26 +906,29 @@ int usb_cdc_acm_write(void *handle, void *buf, size_t length)
 
     if (!cdc_acm || !cdc_acm->ctx)
     {
-        return -1;
+      return -2;
     }
 
     if (cdc_acm->ctx->transmit_buffer.act_len != 0)
     {
         USB_LOG("%s: data is sending, left %ld\n", __func__, cdc_acm->ctx->transmit_buffer.act_len);
-        return -1;
+        return -3;
     }
 
     memcpy(cdc_acm->ctx->transmit_buffer.buf, buf, length);
     cdc_acm->ctx->transmit_buffer.act_len = length;
 
-    retval = usb_ep_send(USB_CDC_ACM_EP_ID, cdc_acm->ctx->transmit_buffer.buf, length, USB_TRANSFER_BULK);
+    // retval = usb_ep_send(USB_CDC_ACM_EP_ID, cdc_acm->ctx->transmit_buffer.buf,
+    //                     length, USB_TRANSFER_BULK);
+    retval = usb_ep_send(cdc_acm->ep_num, cdc_acm->ctx->transmit_buffer.buf,
+                       length, USB_TRANSFER_BULK);
     if (retval < 0)
     {
         USB_LOG("%s: write failed: retval:%d\n", __func__, retval);
-        return -1;
+        return -4;
     }
 
-    return 0;
+    return retval;
 }
 
 /**

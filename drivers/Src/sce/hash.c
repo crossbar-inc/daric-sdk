@@ -111,12 +111,13 @@ SHA_CTX SHA_INFO;
 SHA_CTX HMAC_INFO;
 
 /* Convert memory U8 to U32 in little-endian mode */
-uint32_t SCE_U8ToU32_le(uint8_t *input, uint32_t *output, uint32_t num)
+uint32_t SCE_U8ToU32_le(const uint8_t *input, uint32_t *output, uint32_t num)
 {
     uint32_t i, j = 0;
     for (i = 0; i < num;)
     {
-        output[j] = (input[i + 3] << 24) + (input[i + 2] << 16) + (input[i + 1] << 8) + input[i + 0];
+        output[j] = ((uint32_t)input[i + 3] << 24) | ((uint32_t)input[i + 2] << 16) |
+                    ((uint32_t)input[i + 1] << 8)  |  (uint32_t)input[i + 0];
         i += 4;
         j++;
     }
@@ -129,7 +130,8 @@ uint32_t SCE_U8ToU32(const uint8_t *input, uint32_t *output, uint32_t num)
     uint32_t i, j = 0;
     for (i = 0; i < num;)
     {
-        output[j] = (input[i + 0] << 24) + (input[i + 1] << 16) + (input[i + 2] << 8) + input[i + 3];
+        output[j] = ((uint32_t)input[i + 0] << 24) | ((uint32_t)input[i + 1] << 16) |
+                    ((uint32_t)input[i + 2] << 8)  |  (uint32_t)input[i + 3];
         i += 4;
         j++;
     }
@@ -1383,8 +1385,11 @@ uint32_t hmac_sha256_512_MsgInput(const uint8_t *msg, uint32_t msgLen, uint8_t c
             printBufferU32("BLOCK-OUT", (uint32_t *)ADDR_HASH_SEG_HOUT, digestSize / 4);
 #endif
 #endif
-            memset(tempBuf, 0, sizeof(tempBuf));
         }
+        /* tempBuf still holds the extra block data; clear it so the final
+         * length-only block starts from all-zeros regardless of whether a
+         * batch flush fired above. */
+        memset(tempBuf, 0, sizeof(tempBuf));
     }
 
     /* Convert BYTE array to U32 array, then write to HASH_MSG */
@@ -1937,7 +1942,7 @@ int blake2s_init(void)
     memset(&blakeInfo, 0, sizeof(blakeInfo));
     memcpy(blakeInfo.h, BLK2S_EX, sizeof(BLK2S_EX));
     blakeInfo.outlen = BLAKE2S_OUTBYTES;
-    return 1;
+    return 0;
 }
 
 /**
@@ -2081,7 +2086,7 @@ int blake2b_init(void)
     memset(&blakeInfo_b, 0, sizeof(blakeInfo_b));
     memcpy(blakeInfo_b.h, BLK2B_EX, sizeof(BLK2B_EX));
     blakeInfo_b.outlen = BLAKE2B_OUTBYTES;
-    return 1;
+    return 0;
 }
 
 /**

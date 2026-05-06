@@ -109,5 +109,5 @@ uint32_t bn_expo_mod_crt(const uint32_t *X,
                          uint32_t        nlen,
                          uint8_t         dataEndian,
                          uint32_t       *Result);
-void     bn_mult_mod_EX(uint8_t packLen);
+void     bn_mult_mod_EX(void);
 #endif

@@ -45,7 +45,7 @@
 #define SHA512_BLOCK_SIZE  128
 #define SHA512_DIGEST_SIZE 64 // SHA512 outputs a 64 byte digest
 
-uint32_t SCE_U8ToU32_le(uint8_t *input, uint32_t *output, uint32_t num);
+uint32_t SCE_U8ToU32_le(const uint8_t *input, uint32_t *output, uint32_t num);
 uint32_t SCE_U8ToU32(const uint8_t *input, uint32_t *output, uint32_t num);
 uint32_t SCE_U64ToU32(const uint64_t *input, uint32_t *output, uint32_t num);
 uint32_t SCE_U32ToU8(const uint32_t *input, uint8_t *output, uint32_t num);

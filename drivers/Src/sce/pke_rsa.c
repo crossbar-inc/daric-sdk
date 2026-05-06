@@ -132,7 +132,7 @@ void bn_init(bn_context_t *ctx, const uint32_t *n, uint32_t nlen, bool advance_m
     {
         if (modulo_len >= 256 && modulo_len <= 6144)
         {
-            bn_mult_mod_EX(0);
+            bn_mult_mod_EX();
             REG_SCE_PKE_MIMMCR = PKE_MIMMCR_CONFIG; /* 4 modular multipliers */
             sign               = true;
         }
@@ -334,11 +334,11 @@ void bn_mult_mod(bn_context_t *ctx, const uint32_t *x, const uint32_t *y, uint32
     bnu_memcpy_u32(result, (uint32_t *)ADDR_PKE_SEG_POB + ctx->pack_len / 4, ctx->n_len);
 #endif
 
-    bn_mult_mod_EX(ctx->pack_len);
+    bn_mult_mod_EX();
 }
 
 /* Used for accelerator bugs, clearing cache */
-void bn_mult_mod_EX(uint8_t packLength)
+void bn_mult_mod_EX(void)
 {
     SCE_PKE_OPTNW(6144); /* N length */
     memset((uint8_t *)ADDR_PKE_SEG_PIB, 0, 6144 / 8);
@@ -440,12 +440,12 @@ static void bn_inv_init(const uint32_t *p, uint32_t plen)
  */
 int32_t bn_inv_mod(const uint32_t *x, const uint32_t *p, uint32_t xlen, uint32_t plen, uint32_t *result)
 {
-    int32_t timeout = 20; /* timeout: enough? */
+    int32_t timeout = 200;
 
     ASSERT_4BYTE_ALIGNED(x);
     ASSERT_4BYTE_ALIGNED(p);
     ASSERT_4BYTE_ALIGNED(result);
-    assert(xlen <= 512);
+    assert(xlen <= 128);
 
 #if RSA_LITTLE_ENDIAN
     assert(bnu_get_msb_le(x, xlen) <= bnu_get_msb_le(p, plen));
@@ -474,7 +474,7 @@ int32_t bn_inv_mod(const uint32_t *x, const uint32_t *p, uint32_t xlen, uint32_t
         }
         else
         {
-            printf("delay 1ns for SCE_PKE_INV_READY... :)\n");
+            HAL_Delay(1);
         }
     }
     REG_SCE_PKE_SRMFSM |= 0x100;
@@ -504,10 +504,6 @@ void bn_gcd(const uint32_t *x, const uint32_t *y, uint32_t xlen, uint32_t ylen, 
     assert(bnu_get_msb_le(x, xlen) <= 4096);
     assert(bnu_get_msb_le(y, ylen) <= 4096);
 #endif
-
-    ASSERT_4BYTE_ALIGNED(x);
-    ASSERT_4BYTE_ALIGNED(y);
-    ASSERT_4BYTE_ALIGNED(result);
 
     dlen = (xlen > ylen) ? xlen : ylen;
     dlen = (dlen + 1) / 2 * 2; /* 64bit align */

@@ -162,14 +162,27 @@ void ecdsa_get_bip340_pubkey(curve_type curve, uint32_t *seckey, uint32_t *pubke
 }
 
 /**
- * @brief
+ * @brief Sign a message digest using ECDSA.
  *
- * @param curve curve type
- * @param priv_key private key
- * @param digest message hash
- * @param nonce_fn nonce function
- * @param sigp[out] signature
- * @return int32_t
+ * @param curve    Elliptic curve to use (CT_SECP256K1, CT_SECP256R1, ...).
+ * @param priv_key Private key as a big-endian byte array (32 bytes for
+ *                 256-bit curves).
+ * @param digest   Message hash as a big-endian byte array (32 bytes).
+ * @param nonce_fn Nonce (k) generation callback.  Called as
+ *                 @c nonce_fn(digest, priv_key, NULL, k); the @p data
+ *                 argument is always passed as @c NULL, so the callback
+ *                 must handle a NULL @p data pointer gracefully.
+ * @param sig      [out] Signature output: r || s, each 32 bytes, big-endian.
+ * @return 0 on success, -1 if the nonce function returns an error.
+ *
+ * @note **Low-s normalisation**: if the computed @p s value satisfies
+ *       @c s > n/2 (where @p n is the curve order), the function
+ *       substitutes @c s = n - s before writing the output.  This produces
+ *       the canonical "low-s" form required by BIP-66 and the SEC standard.
+ *       Verifiers that accept only low-s signatures (e.g. Bitcoin) will
+ *       accept the output directly; verifiers that accept both forms will
+ *       also accept it.  When comparing signatures byte-for-byte against an
+ *       external reference, ensure the reference is also normalised to low-s.
  */
 int32_t ecdsa_sign_digest(curve_type curve, const uint32_t *priv_key, const uint32_t *digest, nonce_function nonce_fn, uint32_t *sig)
 {
@@ -248,7 +261,7 @@ int32_t ecdsa_sign_digest(curve_type curve, const uint32_t *priv_key, const uint
 
         return 0;
     }
-    return 0;
+    return -1;
 }
 
 bool ecdsa_validate_pubkey(curve_type curve, pointDef *pub)
@@ -270,7 +283,7 @@ bool ecdsa_validate_pubkey(curve_type curve, pointDef *pub)
 
     if (!num_256_is_less((uint8_t *)&(pub->x), (uint8_t *)prime) || !num_256_is_less((uint8_t *)&(pub->y), (uint8_t *)prime))
     {
-        return 0;
+        return false;
     }
 
     memcpy(y2, (uint8_t *)&(pub->y), 32);
@@ -381,10 +394,10 @@ bool ecdsa_read_pubkey(curve_type curve, const uint32_t *pub_key, uint32_t lengt
         memcpy(&(pub->x), (uint8_t *)pubkey_ptr + 1, 32);
         bnu_swap_endian_1(&(pub->x), 32);
         ec_point_calculate_y(curve, pub);
-        if ((pubkey_ptr[0] & 0x1) != (pub->y[31] & 0x1))
+        if ((pubkey_ptr[0] & 0x1) != (pub->y[0] & 0x1))
         {
             cv_get_prime_le(curve, prime);
-            cv_modulo_sub_le(curve, MT_N, prime, (uint32_t *)&pub->y, (uint32_t *)&pub->y);
+            cv_modulo_sub_le(curve, MT_P, prime, (uint32_t *)&pub->y, (uint32_t *)&pub->y);
             ECDSA_DUMP_BUFFER("y = p - y: ", &pub->y, 32);
         }
         return ecdsa_validate_pubkey(curve, pub);
@@ -398,7 +411,7 @@ bool ecdsa_read_pubkey(curve_type curve, const uint32_t *pub_key, uint32_t lengt
         {
             ECDSA_DEBUG("Y not even\r\n");
             cv_get_prime_le(curve, prime);
-            cv_modulo_sub_le(curve, MT_N, prime, (uint32_t *)&pub->y, (uint32_t *)&pub->y);
+            cv_modulo_sub_le(curve, MT_P, prime, (uint32_t *)&pub->y, (uint32_t *)&pub->y);
             ECDSA_DUMP_BUFFER("y = prime - y: ", &pub->y, 32);
         }
         return ecdsa_validate_pubkey(curve, pub);

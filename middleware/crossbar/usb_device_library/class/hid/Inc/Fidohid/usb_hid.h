@@ -36,7 +36,7 @@ extern "C"
 #endif
 /* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
-
+#include "usb_def.h"
 #define USB_HID_MAX_REPORT_SIZE 64
 #define HID_PACKET_SIZE         USB_HID_MAX_REPORT_SIZE
 

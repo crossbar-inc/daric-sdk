@@ -41,9 +41,13 @@ extern "C"
 #define USB_CDC_ACM_BUF_SIZE 1024
 
 #define USB_CDC_ACM_EP_CMD 0x82
-#define USB_CDC_ACM_EP_IN  0x81
+#define USB_CDC_ACM_EP_MPC_CMD 0x84
+#define USB_CDC_ACM_EP_IN 0x81
+#define USB_CDC_ACM_EP_MPC_IN 0x83
 #define USB_CDC_ACM_EP_OUT 0x01
-#define USB_CDC_ACM_EP_ID  0x01
+#define USB_CDC_ACM_EP_MPC_OUT 0x03
+#define USB_CDC_ACM_EP_ID 0x01
+#define USB_CDC_ACM_EP_MPC_ID 0x03
 
     typedef struct
     {

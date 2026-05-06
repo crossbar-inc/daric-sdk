@@ -59,15 +59,34 @@
 #define USB_TYPE_ENDPOINT  (0X02)
 #define USB_TYPE_DEVICE    (0x00)
 
+#ifdef CONFIG_FIDO_USB_HID
 #define USB_EP1_BUFSIZE     1024
 #define USB_EP2_BUFSIZE     128
 #define USB_EP3_BUFSIZE     64
+#else
+#define USB_EP1_BUFSIZE     1024
+#define USB_EP2_BUFSIZE     128
+#define USB_EP3_BUFSIZE     1024
+#define USB_EP4_BUFSIZE     128
+
+#endif
+
 #define USB_EP1_IN_BUFADDR  (uint32_t) UDC_APP_BUFADDR
+#ifdef CONFIG_FIDO_USB_HID
 #define USB_EP1_OUT_BUFADDR USB_EP1_IN_BUFADDR + USB_EP1_BUFSIZE
 #define USB_EP2_IN_BUFADDR  USB_EP1_OUT_BUFADDR + USB_EP1_BUFSIZE
 #define USB_EP2_OUT_BUFADDR USB_EP2_IN_BUFADDR + USB_EP2_BUFSIZE
 #define USB_EP3_IN_BUFADDR  USB_EP2_OUT_BUFADDR + USB_EP2_BUFSIZE
 #define USB_EP3_OUT_BUFADDR USB_EP3_IN_BUFADDR + USB_EP3_BUFSIZE
+#else
+#define USB_EP1_OUT_BUFADDR USB_EP1_IN_BUFADDR + USB_EP1_BUFSIZE
+#define USB_EP2_IN_BUFADDR USB_EP1_OUT_BUFADDR + USB_EP1_BUFSIZE
+#define USB_EP2_OUT_BUFADDR USB_EP2_IN_BUFADDR + USB_EP2_BUFSIZE
+#define USB_EP3_IN_BUFADDR USB_EP2_OUT_BUFADDR + USB_EP2_BUFSIZE
+#define USB_EP3_OUT_BUFADDR USB_EP3_IN_BUFADDR + USB_EP3_BUFSIZE
+#define USB_EP4_IN_BUFADDR USB_EP3_OUT_BUFADDR + USB_EP3_BUFSIZE
+#define USB_EP4_OUT_BUFADDR USB_EP4_IN_BUFADDR + USB_EP4_BUFSIZE
+#endif
 
 #define CONFIG_DESC_TOTALLEN (USB_DT_CONFIG_SIZE + USB_DT_INTERFACE_SIZE + USB_DT_ENDPOINT_SIZE * 2)
 
@@ -115,18 +134,29 @@ struct usb_context_t
     struct usb_class_t registered_classes[USB_MAX_CLASS_TYPES];
 };
 
-static struct usb_ep_info_t usb_ep_info_table[] = { { USB_EP1_IN_BUFADDR, USB_EP1_OUT_BUFADDR, USB_EP1_BUFSIZE },
-                                                    { USB_EP2_IN_BUFADDR, USB_EP2_OUT_BUFADDR, USB_EP2_BUFSIZE },
-                                                    { USB_EP3_IN_BUFADDR, USB_EP3_OUT_BUFADDR, USB_EP3_BUFSIZE } };
+static struct usb_ep_info_t usb_ep_info_table[] = {
+    {USB_EP1_IN_BUFADDR, USB_EP1_OUT_BUFADDR, USB_EP1_BUFSIZE},
+    {USB_EP2_IN_BUFADDR, USB_EP2_OUT_BUFADDR, USB_EP2_BUFSIZE},
+    {USB_EP3_IN_BUFADDR, USB_EP3_OUT_BUFADDR, USB_EP3_BUFSIZE},
+#ifndef CONFIG_FIDO_USB_HID
+    {USB_EP4_IN_BUFADDR, USB_EP4_OUT_BUFADDR, USB_EP4_BUFSIZE}
+#endif 
+};
 
 static const struct usb_device_descriptor device_descriptor = {
     .bLength         = USB_DT_DEVICE_SIZE,
     .bDescriptorType = USB_DT_DEVICE,
 
     .bcdUSB             = 0x0200,
+#ifdef CONFIG_FIDO_USB_HID
     .bDeviceClass       = 0xEF,
     .bDeviceSubClass    = 0x02,
     .bDeviceProtocol    = 0x01,
+#else
+    .bDeviceClass = 0x00,
+    .bDeviceSubClass = 0x00,
+    .bDeviceProtocol = 0x00,
+#endif
     .bMaxPacketSize0    = 0x40,
     .idVendor           = USB_VENDOR_ID,
     .idProduct          = USB_PRODUCT_ID,
@@ -539,7 +569,12 @@ static int get_descriptor_request(uint16_t value, uint16_t index, uint16_t lengt
                 }
 
                 config_desc->wTotalLength        = offset;
+
+#ifndef CONFIG_FIDO_USB_HID
+                config_desc->bNumInterfaces = usb_ctx.registered_class_count + 2;
+#else
                 config_desc->bNumInterfaces      = usb_ctx.registered_class_count + 1;
+#endif
                 config_desc->bConfigurationValue = 1;
                 config_desc->iConfiguration      = 0;
                 config_desc->bmAttributes        = 0xC0;
@@ -1002,9 +1037,16 @@ int usb_class_register(int ep, struct usb_class_callback_t cb)
         case USB_CDC_ACM_EP_NUM:
             ctx->registered_classes[ctx->registered_class_count].interface_num = USB_CDC_ACM_INTERFACE;
             break;
+
+#ifndef CONFIG_FIDO_USB_HID
+  case USB_CDC_ACM_EP_MPC_NUM:
+    ctx->registered_classes[ctx->registered_class_count].interface_num = USB_CDC_ACM_MPC_CMD_INTERFACE;
+    break;
+#else
         case USB_HID_EP_NUM:
             ctx->registered_classes[ctx->registered_class_count].interface_num = USB_HID_INTERFACE;
             break;
+#endif
         default:
             USB_LOG("%s: not support class type: %d\n", __func__, ep);
             return -1;
