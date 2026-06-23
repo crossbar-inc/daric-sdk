@@ -52,6 +52,7 @@
 SPIM_HandleTypeDef s_hspim_lcd;
 BSP_LCD_Driver    *daric_panel_driver = NULL;
 BSP_LCD_Cfg_t      Lcd_Ctx[LCD_INSTANCES_NBR];
+extern bool is_fast_boot();
 //----------------------------------------------------------
 void SPI_WriteByte(uint8_t *txbuf, uint32_t txlen)
 {
@@ -59,7 +60,7 @@ void SPI_WriteByte(uint8_t *txbuf, uint32_t txlen)
 }
 void SPI_ReadByte(uint8_t *buf, uint32_t len)
 {
-    HAL_SPIM_Receive(&s_hspim_lcd, buf, len, SPIM_CS_KEEP, HAL_MAX_DELAY);
+    HAL_SPIM_Receive(&s_hspim_lcd, buf, len, SPIM_CS_NONE, HAL_MAX_DELAY);
 }
 
 void SPI_Write_Mul_Byte(uint8_t *txbuf, uint32_t txlen)
@@ -113,7 +114,7 @@ HAL_StatusTypeDef lcd_gpio_init(uint32_t Instance)
         { &lcd_info->vcien_pin, lcd_info->vcien_port, GPIO_MODE_OUTPUT, GPIO_NOPULL, "LCD_VCIEN", LCD_VCIEN_IS_REQUIRED },
 #endif
 #ifdef CONFIG_LCD_RST_IS_REQUIRED
-        { &lcd_info->rst_pin, lcd_info->rst_port, GPIO_MODE_OUTPUT, GPIO_NOPULL, "LCD_RST", LCD_RST_IS_REQUIRED },
+        {&lcd_info->rst_pin, lcd_info->rst_port,     GPIO_MODE_OUTPUT, GPIO_PULLUP, "LCD_RST",   LCD_RST_IS_REQUIRED},
 #endif
 #ifdef CONFIG_LCD_BUSY_IS_REQUIRED
         { &lcd_info->busy_pin, lcd_info->busy_port, GPIO_MODE_INPUT, GPIO_NOPULL, "LCD_BUSY", LCD_BUSY_IS_REQUIRED },
@@ -196,6 +197,8 @@ HAL_StatusTypeDef lcd_common_probe(uint32_t Instance)
     BSP_LCD_Ops_t    *ops;
     HAL_StatusTypeDef ret;
     int               i;
+    bool fastboot_mode = is_fast_boot();
+    static bool mode_flag = false;
     LCD_FUNC_ENTER();
 
     daric_panel_driver = (BSP_LCD_Driver *)malloc(sizeof(BSP_LCD_Driver));
@@ -205,6 +208,7 @@ HAL_StatusTypeDef lcd_common_probe(uint32_t Instance)
         return HAL_ERROR;
     }
 
+    LCD_INFO("lcd_common_probe:fastboot_mode = %d ,mode_flag=%d", fastboot_mode, mode_flag);
     for (i = 0; i < ARRAY_SIZE(supported_lcd); i++)
     {
         daric_panel_driver = supported_lcd[i].drv;
@@ -216,10 +220,17 @@ HAL_StatusTypeDef lcd_common_probe(uint32_t Instance)
             LCD_ERROR("Failed to initialize panel_if\n");
             return HAL_ERROR;
         }
-
+#if defined(CONFIG_LCD_ULPS_MODE)
+        if(!fastboot_mode && !mode_flag) {
+            LCD_INFO("Not Fastboot mode, powering on\n");
+            mode_flag = true;
+            if (ops && ops->Power)
+                ops->Power(Instance, true);
+        }
+#else
         if (ops && ops->Power)
             ops->Power(Instance, true);
-
+#endif
         if (ops && ops->ReadID)
         {
             uint32_t id;
@@ -230,9 +241,10 @@ HAL_StatusTypeDef lcd_common_probe(uint32_t Instance)
                 break;
             }
         }
-
+#if !defined(CONFIG_LCD_ULPS_MODE)
         if (ops && ops->Power)
             ops->Power(Instance, false);
+#endif
 
         LCD_INFO("lcd panel ID 0x%lx doesn't match, trying next...\n", (unsigned long)supported_lcd[i].lcd_id);
     }
@@ -258,6 +270,7 @@ HAL_StatusTypeDef lcd_common_probe(uint32_t Instance)
     LCD_INFO("lcd.height = %d\n", info->height);
     LCD_INFO("lcd.bpp = %d\n", info->bpp);
     LCD_INFO("lcd.one_frame_data_size = %lu\n", info->one_frame_data_size);
+    LCD_INFO("fastboot_mode = %d ,mode_flag=%d", fastboot_mode, mode_flag);
     LCD_INFO("lcd panel initialization successful\n");
     LCD_FUNC_EXIT();
     return HAL_OK;

@@ -23,11 +23,9 @@ get_filename_component(ROOT_DIR "${GCC_PROJECT_DIR}/../../../../" ABSOLUTE)
 include(${GCC_PROJECT_DIR}/GCC/project.cmake)
 include(${ROOT_DIR}/bsp/${CONFIG_BOARD}/board.cmake)
 
-# Define configurations for C code
-add_definitions(-DCONFIG_SOC_DARIC_NTO_A=1)
-if(CONFIG_SUPPORT_800MFREQ STREQUAL "y")
-    add_definitions(-DCONFIG_SUPPORT_800MFREQ)
-endif()
+# Define configurations for C code via gen_configs (auto-converts all CONFIG_* and HAL_* vars)
+add_library(configs INTERFACE)
+include(${CMAKE_CURRENT_LIST_DIR}/gen_configs.cmake)
 
 # Find all sources in project
 set(project_srcs
@@ -57,6 +55,7 @@ set(driver_srcs
 set(main_srcs ${project_srcs} ${driver_srcs})
 
 add_executable(${TARGET} ${main_srcs})
+target_link_libraries(${TARGET} PRIVATE configs)
 
 # Include directories
 target_include_directories(${TARGET} PRIVATE 

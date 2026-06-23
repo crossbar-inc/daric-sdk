@@ -125,6 +125,8 @@ int main(void)
      * The configuration of the system frequency requires TG28,
      * so the I2C must be initialized first.
      */
+    HAL_Init();
+    HAL_TickInit();
     TG28_I2C_init();
     HAL_ClockConfig(HAL_CPU_FREQSEL_700MHZ);
     clkAnalysis();

@@ -90,7 +90,7 @@ const char *get_curve_name(curve_type curve)
     }
 }
 
-uint32_t fixed_nonce(const uint32_t *msg, const uint32_t *key, const uint32_t *data, uint32_t *nonce)
+uint32_t fixed_nonce(uint32_t *nonce)
 {
     memcpy(nonce, K_BE, 32);
     return 0;
@@ -226,7 +226,12 @@ int main(void)
     printf("\nHello daric ecdsa demo. Build @ %s %s.\n", __DATE__, __TIME__);
 
     HAL_Init();
+    HAL_TickInit();
+    HAL_ClockConfig(HAL_CPU_FREQSEL_700MHZ);
+    clkAnalysis();
 
+    printf("\nDelay 2 seconds.\n");
+    HAL_Delay(2000);
     printf("Starting Baremetal ECDSA Demo...\n");
 
     run_ecdsa_test();

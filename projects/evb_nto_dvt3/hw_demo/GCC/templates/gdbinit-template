@@ -1,0 +1,9 @@
+
+target remote <ip>:<port>
+
+monitor semihosting enable
+monitor semihosting breakOnError
+monitor semihosting IOClient 2
+
+monitor reset
+load

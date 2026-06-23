@@ -137,7 +137,12 @@ int main(void)
 
     HAL_Init();
     HAL_PINMAP_init(pinMap, sizeof(pinMap) / sizeof(pinMap[0]));
+    HAL_TickInit();
+    HAL_ClockConfig(HAL_CPU_FREQSEL_700MHZ);
+    clkAnalysis();
 
+    printf("\nDelay 2 seconds.\n");
+    HAL_Delay(2000);
     printf("Starting Baremetal UART Demo...\n");
     printf("Debug trace is on DUART, Shell is on UART0.\n");
     shell_init();

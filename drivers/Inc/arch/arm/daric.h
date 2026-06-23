@@ -365,13 +365,30 @@ typedef struct
     volatile uint32_t vexram; // 14
     volatile uint32_t DUMMY08[2];
     volatile uint32_t srambankerr; // 20
+    volatile uint32_t DUMMY24[3];
+    volatile uint32_t ramsec; // 30
 } DARIC_CORE_SRAMCFG_TypeDef;
+
+typedef union
+{
+    struct
+    {
+        uint32_t key_access_err : 1;
+        uint32_t data_access_err : 1;
+        uint32_t code_access_err : 1;
+        uint32_t cfg_access_err : 1;
+        uint32_t info_access_err : 1;
+        uint32_t rfu : 27;
+    } bits;
+    uint32_t rrcFrVal;
+} DARIC_URRCFRREG_Union;
 
 typedef struct
 {
     volatile uint32_t RRC_CR; // ReRAM control register
     volatile uint32_t CFG_FD; // ReRAM Configure clock frequency
     volatile uint32_t CFG_SR; // ReRAM status indicator
+    DARIC_URRCFRREG_Union RRC_FR;
 } DARIC_RERAM_TypeDef;
 
 typedef struct

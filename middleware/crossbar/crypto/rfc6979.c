@@ -54,7 +54,7 @@ static void dump_buffer(char *name, void *buf, uint32_t len)
 #define RFC6979_DUMP_BUFFER(name, ptr, len)
 #endif
 
-static void rfc6979_hmac_init(rfc6979_context *ctx, const uint32_t *msg, const uint32_t *key, const uint32_t *data)
+void rfc6979_hmac_init(rfc6979_context *ctx, const uint32_t *msg, const uint32_t *key)
 {
     static const uint8_t zero[1] = { 0 };
     static const uint8_t one[1]  = { 1 };
@@ -97,7 +97,7 @@ static void rfc6979_hmac_init(rfc6979_context *ctx, const uint32_t *msg, const u
     return;
 }
 
-static void rfc6979_hmac_generate(rfc6979_context *ctx, uint32_t *nonce_out)
+void rfc6979_hmac_generate(rfc6979_context *ctx, uint32_t *nonce_out)
 {
     static const uint8_t zero[1] = { 0x00 };
 
@@ -122,17 +122,12 @@ static void rfc6979_hmac_generate(rfc6979_context *ctx, uint32_t *nonce_out)
     ctx->retry = 1;
 }
 
-uint32_t rfc6979_nonce_fn(const uint32_t *msg, const uint32_t *key, const uint32_t *data, uint32_t *nonce)
+uint32_t rfc6979_nonce_fn(const uint32_t *msg, const uint32_t *key, uint32_t *nonce)
 {
     rfc6979_context rfc6979_ctx;
-    uint32_t        counter = *data;
-    int32_t         i;
 
-    rfc6979_hmac_init(&rfc6979_ctx, msg, key, data);
-    for (i = 0; i <= counter; i++)
-    {
-        rfc6979_hmac_generate(&rfc6979_ctx, nonce);
-    }
+    rfc6979_hmac_init(&rfc6979_ctx, msg, key);
+    rfc6979_hmac_generate(&rfc6979_ctx, nonce);
 
     return 0;
 }

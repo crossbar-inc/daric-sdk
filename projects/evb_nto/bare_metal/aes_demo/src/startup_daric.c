@@ -45,6 +45,7 @@
 #include <stdint.h>
 #include "daric.h"
 #include "daric_util.h"
+#include "daric_hal.h"
 
 /*----------------------------------------------------------------------------
   External References
@@ -83,7 +84,7 @@ void UsageFault_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void SVC_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void DebugMon_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void PendSV_Handler(void) __attribute__((weak, alias("Default_Handler")));
-void SysTick_Handler(void) __attribute__((weak, alias("Default_Handler")));
+void SysTick_Handler(void);
 
 void EXT_IRQ16_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void EXT_IRQ17_Handler(void) __attribute__((weak, alias("Default_Handler")));
@@ -689,6 +690,11 @@ void Default_Handler(void)
 {
     while (1)
         ;
+}
+
+void SysTick_Handler(void)
+{
+    HAL_SysTick_Handler();
 }
 
 #if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)

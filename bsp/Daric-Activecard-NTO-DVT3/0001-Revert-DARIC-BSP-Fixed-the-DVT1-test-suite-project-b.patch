@@ -1,0 +1,188 @@
+From 4e0b3c13d363928b5faf4c92cece651a5b853a21 Mon Sep 17 00:00:00 2001
+From: richard <zhenyu.li@hechengxing.cn>
+Date: Tue, 26 May 2026 19:20:53 +0800
+Subject: [PATCH] Revert "[DARIC][BSP]: Fixed the DVT1 test suite project build
+ error."
+
+This reverts commit 71231a5d830aff120b7c0e9fc8c7ace0f5d5cbea.
+---
+ Daric-Activecard-NTO-DVT2/daric_pm.c | 24 +++++++++++++-----------
+ Daric-Activecard-NTO-DVT2/daric_pm.h | 10 ----------
+ Daric-Activecard-NTO/daric_pm.c      | 23 +++++++++++++++--------
+ Daric-Activecard-NTO/daric_pm.h      | 10 ----------
+ 4 files changed, 28 insertions(+), 39 deletions(-)
+
+diff --git a/Daric-Activecard-NTO-DVT2/daric_pm.c b/Daric-Activecard-NTO-DVT2/daric_pm.c
+index 0470345..7f47bf8 100644
+--- a/Daric-Activecard-NTO-DVT2/daric_pm.c
++++ b/Daric-Activecard-NTO-DVT2/daric_pm.c
+@@ -33,7 +33,6 @@
+ #include "daric_pm.h"
+ #include "daric_hal.h"
+ #include "tx_low_power_user.h"
+-#include "daric_hal.h"
+ 
+ #define SIZE_ALIAGNMENT(type, n) ((sizeof(type) + n - 1) / n)
+ 
+@@ -130,7 +129,8 @@ extern bool sleep_mode_is_screen_off();
+ extern void aw2023_led_off(void);
+ extern void aw2023_enter_lowpower();
+ 
+-void BSP_PM_sleepModeEnter(bool sleep)
++extern void sleep_mode_registerCallbackListener(void (*listener)(bool));
++void bsp_pm_sleep_mode_listener_callback(bool sleep)
+ {
+     printf("%s, sleep mode: %d\r\n", __FUNCTION__, sleep);
+     g_is_sleep = sleep;
+@@ -183,6 +183,7 @@ int BSP_PM_init(void) {
+     // } else {
+     //     LOGI("Battery timer created");
+     // }
++    // sleep_mode_registerCallbackListener(bsp_pm_sleep_mode_listener_callback);
+     // init_perpherial();
+     // init_batteryCapacity();
+     // init_charge();
+@@ -1009,19 +1010,19 @@ static void tg28_iqr(uint32_t irq) {
+     if (irq & TG28_IRQ_MASK_VBUS_INSER) {
+         LOGI("vBus inserted");
+         irq_handle_chargeStatus();
+-        if (g_hal_sp_get_screen_off_state_listener != NULL && g_hal_sp_get_screen_off_state_listener()
+-            && g_hal_bs_send_pwk_short_press_event_listener != NULL)
+-        {
+-            g_hal_bs_send_pwk_short_press_event_listener();
++        if (sleep_mode_is_screen_off()) {
++            #ifdef CONFIG_DARIC_GUIX
++            bsp_pm_send_short_powerkey_event();
++            #endif
+         }
+-	}
++    }
+     if (irq & TG28_IRQ_MASK_VBUS_RMV) {
+         LOGI("vBus removed");
+         irq_handle_chargeStatus();
+-        if (g_hal_sp_get_screen_off_state_listener != NULL && g_hal_sp_get_screen_off_state_listener()
+-            && g_hal_bs_send_pwk_short_press_event_listener != NULL)
+-        {
+-            g_hal_bs_send_pwk_short_press_event_listener();
++        if (sleep_mode_is_screen_off()) {
++            #ifdef CONFIG_DARIC_GUIX
++            bsp_pm_send_short_powerkey_event();
++            #endif
+         }
+     }
+     if (irq & TG28_IRQ_MASK_BAT_INSER) {
+@@ -1091,6 +1092,7 @@ static void thread_main(ULONG thread_input) {
+     init_charge();
+     ctx.threadRan = true;
+     tx_timer_activate(&ctx.timer);
++    sleep_mode_registerCallbackListener(bsp_pm_sleep_mode_listener_callback);
+ 
+     while (1) {
+         status = tx_queue_receive(&ctx.msg_que, &message, TX_WAIT_FOREVER);
+diff --git a/Daric-Activecard-NTO-DVT2/daric_pm.h b/Daric-Activecard-NTO-DVT2/daric_pm.h
+index 9a8c2ec..5e6758d 100644
+--- a/Daric-Activecard-NTO-DVT2/daric_pm.h
++++ b/Daric-Activecard-NTO-DVT2/daric_pm.h
+@@ -147,14 +147,4 @@ void BSP_PM_registerEventListener(BSP_PM_EvntListener listener,
+  * @param  listener, callback
+  */
+ void BSP_PM_unRegisterEventListener(BSP_PM_EvntListener listener);
+-
+-/**
+- * @brief Immediately enters or exits the system sleep mode.
+- *
+- * @param[in] sleep Boolean flag indicating the desired action:
+- *                  - `true` : Immediately enter sleep mode (low-power state).
+- *                  - `false`: Immediately exit sleep mode (wake up the system).
+- * @return None. This function does not return a value.
+- */
+-void BSP_PM_sleepModeEnter(bool sleep);
+ #endif //_DARIC_PM_H_
+\ No newline at end of file
+diff --git a/Daric-Activecard-NTO/daric_pm.c b/Daric-Activecard-NTO/daric_pm.c
+index 1539e37..48a4a95 100644
+--- a/Daric-Activecard-NTO/daric_pm.c
++++ b/Daric-Activecard-NTO/daric_pm.c
+@@ -30,7 +30,6 @@
+ #include "tg28.h"
+ 
+ #include "daric_pm.h"
+-#include "daric_hal.h"
+ 
+ #define SIZE_ALIAGNMENT(type, n) ((sizeof(type) + n - 1) / n)
+ 
+@@ -107,10 +106,15 @@ static BSP_PM_CHARG_ST convert_chargStatus(CHG_ST_E st);
+ static PM_Ctx ctx = {0};
+ 
+ bool g_is_sleep = false;
++#ifdef CONFIG_DARIC_GUIX
++extern void bsp_pm_send_short_powerkey_event();
++extern bool sleep_mode_is_screen_off();
++#endif
+ extern void aw2023_led_off(void);
+ extern void aw2023_enter_lowpower();
+ 
+-void BSP_PM_sleepModeEnter(bool sleep)
++extern void sleep_mode_registerCallbackListener(void (*listener)(bool));
++void bsp_pm_sleep_mode_listener_callback(bool sleep)
+ {
+     printf("%s, sleep mode: %d\r\n", __FUNCTION__, sleep);
+     g_is_sleep = sleep;
+@@ -163,6 +167,7 @@ int BSP_PM_init(void) {
+     } else {
+         LOGI("Battery timer created");
+     }
++    sleep_mode_registerCallbackListener(bsp_pm_sleep_mode_listener_callback);
+     init_perpherial();
+     init_batteryCapacity();
+     init_charge_param();
+@@ -610,18 +615,20 @@ static void tg28_iqr(uint32_t irq) {
+     }
+     if (irq & TG28_IRQ_MASK_VBUS_INSER) {
+         timer_handle_chargeStatus();
+-        if (g_hal_sp_get_screen_off_state_listener != NULL && g_hal_sp_get_screen_off_state_listener()
+-            && g_hal_bs_send_pwk_short_press_event_listener != NULL)
++        if (sleep_mode_is_screen_off())
+         {
+-            g_hal_bs_send_pwk_short_press_event_listener();
++            #ifdef CONFIG_DARIC_GUIX
++            bsp_pm_send_short_powerkey_event();
++            #endif
+         }
+     }
+     if (irq & TG28_IRQ_MASK_VBUS_RMV) {
+         timer_handle_chargeStatus();
+-        if (g_hal_sp_get_screen_off_state_listener != NULL && g_hal_sp_get_screen_off_state_listener()
+-            && g_hal_bs_send_pwk_short_press_event_listener != NULL)
++        if (sleep_mode_is_screen_off())
+         {
+-            g_hal_bs_send_pwk_short_press_event_listener();
++            #ifdef CONFIG_DARIC_GUIX
++            bsp_pm_send_short_powerkey_event();
++            #endif
+         }
+     }
+     if (irq & TG28_IRQ_MASK_PO_SHORT) {
+diff --git a/Daric-Activecard-NTO/daric_pm.h b/Daric-Activecard-NTO/daric_pm.h
+index 678e906..a5e4045 100644
+--- a/Daric-Activecard-NTO/daric_pm.h
++++ b/Daric-Activecard-NTO/daric_pm.h
+@@ -146,14 +146,4 @@ void BSP_PM_registerEventListener(BSP_PM_EvntListener listener,
+  * @param  listener, callback
+  */
+ void BSP_PM_unRegisterEventListener(BSP_PM_EvntListener listener);
+-
+-/**
+- * @brief Immediately enters or exits the system sleep mode.
+- *
+- * @param[in] sleep Boolean flag indicating the desired action:
+- *                  - `true` : Immediately enter sleep mode (low-power state).
+- *                  - `false`: Immediately exit sleep mode (wake up the system).
+- * @return None. This function does not return a value.
+- */
+-void BSP_PM_sleepModeEnter(bool sleep);
+ #endif //_DARIC_PM_H_
+\ No newline at end of file
+-- 
+2.25.1
+

@@ -32,6 +32,8 @@
 #include <string.h>
 #include "daric.h"
 #include "auth.h"
+#include "daric_util.h"
+#include "bn_util.h"
 
 /**
  * @brief Transfer data by X channel.
@@ -46,6 +48,10 @@
  */
 void Xch_Sch_TranData(uint8_t type, uint8_t opmode, uint8_t opt, uint32_t address, uint8_t segId, uint8_t segId_off, uint32_t size)
 {
+    ASSERT_4BYTE_ALIGNED(address);
+
+    DARIC_RERAM->RRC_FR.rrcFrVal = 0xFF;      // clear RRC error flag register
+
     /* write : sceram to other   read:  other to sceram */
     SCE_XCH_SCH_SDMA_FUNC(type, opmode);
 

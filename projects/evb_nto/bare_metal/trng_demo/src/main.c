@@ -335,7 +335,12 @@ int main(void)
     printf("\nHello daric trng demo. Build @ %s %s.\n", __DATE__, __TIME__);
 
     HAL_Init();
+    HAL_TickInit();
+    HAL_ClockConfig(HAL_CPU_FREQSEL_700MHZ);
+    clkAnalysis();
 
+    printf("\nDelay 2 seconds.\n");
+    HAL_Delay(2000);
     printf("========================================\r\n");
     printf("  TRNG LL-API Comprehensive Test Suite\r\n");
     printf("========================================\r\n");

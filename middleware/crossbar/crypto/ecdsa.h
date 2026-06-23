@@ -37,14 +37,13 @@
 #include "hal_api.h"
 
 /**
- * @brief A pointer to a function to deterministically generate a nonce.
- * @param msg: 32-byte message hash
- * @param key: 32-byte private key
- * @param data: 32-byte extra data, could be NULL
- * @param nonce[out]: 32-byte nonce filled by the function
- * @return uint32_t: 0 on success, other on failure
+ * @brief A pointer to a function to generate a nonce for ECDSA signing.
+ * @param msg:   32-byte message hash (big-endian)
+ * @param key:   32-byte private key (big-endian)
+ * @param nonce: [out] 32-byte nonce filled by the function
+ * @return 0 on success, other on failure
  */
-typedef uint32_t (*nonce_function)(const uint32_t *msg, const uint32_t *key, const uint32_t *data, uint32_t *nonce);
+typedef uint32_t (*nonce_function)(uint32_t *nonce);
 void    ecdsa_get_pubkey(curve_type curve, uint32_t *seckey, uint32_t *pubkey);
 void    ecdsa_get_bip340_pubkey(curve_type curve, uint32_t *seckey, uint32_t *pubkey);
 int32_t ecdsa_sign_digest(curve_type curve, const uint32_t *priv_key, const uint32_t *digest, nonce_function nonce_fn, uint32_t *sig);

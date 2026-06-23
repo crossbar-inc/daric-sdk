@@ -115,6 +115,15 @@ extern "C"
 #include "daric_hal_atimer.h"
 #endif /* HAL_ATIMER_MODULE_ENABLED */
 
+/* HAL_TICK_ATIMER_ENABLED: use ATimer as the HAL tick source (HAL_TickInit /
+ * HAL_GetTick / HAL_Delay). Independent from HAL_ATIMER_MODULE_ENABLED, which
+ * controls whether the full ATimer driver is compiled. Requires ATimer HW. */
+#ifdef HAL_TICK_ATIMER_ENABLED
+#ifndef HAL_ATIMER_MODULE_ENABLED
+#include "daric_hal_atimer.h"
+#endif
+#endif /* HAL_TICK_ATIMER_ENABLED */
+
 #ifdef HAL_MDMA_MODULE_ENABLED
 #include "daric_hal_mdma.h"
 #endif /* HAL_MDMA_MODULE_ENABLED */

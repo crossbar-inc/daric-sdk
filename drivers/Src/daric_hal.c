@@ -63,15 +63,48 @@ const HAL_CPU_FreqVolMap_TypeDef g_cpu_fv_map[HAL_CPU_FREQSEL_NUM] = {
     { HAL_CPU_FREQSEL_600MHZ, 600 * HAL_UNIT_MHZ, 900 }, { HAL_CPU_FREQSEL_700MHZ, 700 * HAL_UNIT_MHZ, 950 }, { HAL_CPU_FREQSEL_800MHZ, 800 * HAL_UNIT_MHZ, 1000 }
 };
 
-#ifdef HAL_ATIMER_MODULE_ENABLED
+#ifdef HAL_TICK_ATIMER_ENABLED
 #define HAL_TICKS_PER_SECOND HAL_MICROSECOND_PER_SECOND
 #define HAL_SYSTICK_CYCLES   (((CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC) / (CONFIG_SYS_CLOCK_TICKS_PER_SEC)) - 1)
 #define HAL_SYSTICK_FACTOR   (1.04167f)
 
 static ATimer_HandleTypeDef s_sys_tim;
 static float                tim_factor;
+static bool                 s_tick_initialized = false;
+static uint32_t             s_systick_ctrl_saved = 0;
 
-static HAL_StatusTypeDef HAL_TickInit(void)
+static void HAL_TickStop(void)
+{
+    s_systick_ctrl_saved = SysTick->CTRL;
+    SysTick->CTRL = 0;
+    HAL_ATimer_Stop(&s_sys_tim);
+}
+
+static void HAL_TickRestart(void)
+{
+    /* Reconfigure ATimer prescaler for the new clock */
+    tim_factor = (float)HAL_GetCoreClkMHz() / 100 * (((DARIC_CGU->fdpclk & 0xff) >= 0x1f) ? (0x1f) : (DARIC_CGU->fdpclk & 0xff)) / 0x0f;
+
+    s_sys_tim.Instance               = ATIMER0;
+    s_sys_tim.Init.ClockSelection    = ATIMER_CLOCK_SELECTION_PCLK;
+    s_sys_tim.Init.ConterMode        = ATIMER_COUNTER_MODE_RESET;
+    s_sys_tim.Init.AutoReloadPreload = -1;
+    s_sys_tim.Init.Prescaler         = (uint32_t)(6 * tim_factor - 1);
+    s_sys_tim.Init.CascadeMode       = ATIMER_CASCADE_MODE_INDEPENDENT;
+    HAL_ATimer_Init(&s_sys_tim);
+    HAL_ATimer_Start(&s_sys_tim);
+
+    /* Resync SysTick to the new SystemCoreClock and restore its previous
+     * CTRL state (e.g. TICKINT enabled by ThreadX). */
+    if (s_systick_ctrl_saved & SysTick_CTRL_ENABLE_Msk)
+    {
+        SysTick->LOAD = (SystemCoreClock / CONFIG_SYS_CLOCK_TICKS_PER_SEC) - 1;
+        SysTick->VAL  = 0;
+        SysTick->CTRL = s_systick_ctrl_saved;
+    }
+}
+
+HAL_StatusTypeDef HAL_TickInit(void)
 {
     tim_factor = (float)HAL_GetCoreClkMHz() / 100 * (((DARIC_CGU->fdpclk & 0xff) >= 0x1f) ? (0x1f) : (DARIC_CGU->fdpclk & 0xff)) / 0x0f;
 
@@ -83,11 +116,37 @@ static HAL_StatusTypeDef HAL_TickInit(void)
     s_sys_tim.Init.CascadeMode       = ATIMER_CASCADE_MODE_INDEPENDENT;
     HAL_ATimer_Init(&s_sys_tim);
     HAL_ATimer_Start(&s_sys_tim);
+
+    s_tick_initialized = true;
     return HAL_OK;
 }
 
+__weak void HAL_SysTick_Handler(void) {}
+
 #else
 #define HAL_TICKS_PER_SECOND CONFIG_SYS_CLOCK_TICKS_PER_SEC
+
+static volatile uint32_t s_uwTick = 0;
+
+HAL_StatusTypeDef HAL_TickInit(void)
+{
+    /* Recalibrate LOAD for the current SystemCoreClock. Preserve CTRL as-is:
+     * an RTOS (e.g. ThreadX) may have already configured TICKINT before this
+     * call, and we must not clear it. If SysTick is not yet running, start it
+     * with TICKINT enabled for bare-metal interrupt-driven tick counting. */
+    SysTick->LOAD = (SystemCoreClock / CONFIG_SYS_CLOCK_TICKS_PER_SEC) - 1;
+    SysTick->VAL  = 0;
+    if (!(SysTick->CTRL & SysTick_CTRL_ENABLE_Msk))
+    {
+        SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
+    }
+    return HAL_OK;
+}
+
+__weak void HAL_SysTick_Handler(void)
+{
+    s_uwTick++;
+}
 #endif
 
 extern void DaricClockInit(uint32_t Freq);
@@ -185,12 +244,16 @@ HAL_StatusTypeDef HAL_ClockConfig(HAL_CPU_FreqSel_TypeDef freq_sel)
     HAL_INTERRUPT_SAVE_AREA
     HAL_LOCK
 
-    /* Stop the timer and SysTick */
+#ifdef HAL_TICK_ATIMER_ENABLED
+    uint32_t atimer_counter = 0;
+    if (s_tick_initialized)
+    {
+        HAL_TickStop();
+        atimer_counter = HAL_ATimer_GetCounter(&s_sys_tim);
+    }
+#else
+    uint32_t systick_ctrl_saved = SysTick->CTRL;
     SysTick->CTRL = 0;
-
-#ifdef HAL_ATIMER_MODULE_ENABLED
-    HAL_ATimer_Stop(&s_sys_tim);
-    uint32_t atimer_counter = HAL_ATimer_GetCounter(&s_sys_tim);
 #endif
 
     /* CPU frequency configure */
@@ -208,14 +271,19 @@ HAL_StatusTypeDef HAL_ClockConfig(HAL_CPU_FreqSel_TypeDef freq_sel)
         /* Update the SystemCoreClock */
         SystemCoreClock = HAL_GetCoreClkMHz() * HAL_UNIT_MHZ;
 
-        /* SysTick configure */
-        SysTick->LOAD = (SystemCoreClock / CONFIG_SYS_CLOCK_TICKS_PER_SEC) - 1; // 1ms
-        SysTick->VAL  = 0;                                                      // reset the counter
-
-        /* Enable SysTick and Atimer */
-        SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk; // start SysTick
-#ifdef HAL_ATIMER_MODULE_ENABLED
-        HAL_ATimer_Start(&s_sys_tim);
+#ifdef HAL_TICK_ATIMER_ENABLED
+        if (s_tick_initialized)
+        {
+            HAL_TickRestart();
+            ATIMER0->CNT = atimer_counter;
+        }
+#else
+        if (systick_ctrl_saved & SysTick_CTRL_ENABLE_Msk)
+        {
+            SysTick->LOAD = (SystemCoreClock / CONFIG_SYS_CLOCK_TICKS_PER_SEC) - 1;
+            SysTick->VAL  = 0;
+            SysTick->CTRL = systick_ctrl_saved;
+        }
 #endif
 
         /* Source unlock */
@@ -228,31 +296,22 @@ HAL_StatusTypeDef HAL_ClockConfig(HAL_CPU_FreqSel_TypeDef freq_sel)
         /* Update the SystemCoreClock */
         SystemCoreClock = HAL_GetCoreClkMHz() * HAL_UNIT_MHZ;
 
-        /* SysTick configure */
-        SysTick->LOAD = (SystemCoreClock / CONFIG_SYS_CLOCK_TICKS_PER_SEC) - 1; // 1ms
-        SysTick->VAL  = 0;                                                      // reset the counter
-
-#ifdef HAL_ATIMER_MODULE_ENABLED
-        /* ATimer configure */
-        tim_factor = (float)HAL_GetCoreClkMHz() / 100 * (((DARIC_CGU->fdpclk & 0xff) >= 0x1f) ? (0x1f) : (DARIC_CGU->fdpclk & 0xff)) / 0x0f;
-
-        s_sys_tim.Instance               = ATIMER0;
-        s_sys_tim.Init.ClockSelection    = ATIMER_CLOCK_SELECTION_PCLK;
-        s_sys_tim.Init.ConterMode        = ATIMER_COUNTER_MODE_RESET;
-        s_sys_tim.Init.AutoReloadPreload = -1;
-        s_sys_tim.Init.Prescaler         = (uint32_t)(6 * tim_factor - 1);
-        s_sys_tim.Init.CascadeMode       = ATIMER_CASCADE_MODE_INDEPENDENT;
-        HAL_ATimer_Init(&s_sys_tim);
-        ATIMER0->CNT = atimer_counter;
-#endif
-
         /* Configure DUART */
         DUART_Init();
 
-        /* Enable SysTick and Atimer */
-        SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk; // start SysTick
-#ifdef HAL_ATIMER_MODULE_ENABLED
-        HAL_ATimer_Start(&s_sys_tim);
+#ifdef HAL_TICK_ATIMER_ENABLED
+        if (s_tick_initialized)
+        {
+            HAL_TickRestart();
+            ATIMER0->CNT = atimer_counter;
+        }
+#else
+        if (systick_ctrl_saved & SysTick_CTRL_ENABLE_Msk)
+        {
+            SysTick->LOAD = (SystemCoreClock / CONFIG_SYS_CLOCK_TICKS_PER_SEC) - 1;
+            SysTick->VAL  = 0;
+            SysTick->CTRL = systick_ctrl_saved;
+        }
 #endif
     }
     /* Source unlock */
@@ -278,9 +337,6 @@ HAL_StatusTypeDef HAL_Init(void)
 #ifdef HAL_IFRAMMGR_MODULE_ENABLED
     IframMgr_Init((void *)IFRAM_BASE, IFRAM_SIZE);
 #endif
-#ifdef HAL_ATIMER_MODULE_ENABLED
-    HAL_TickInit();
-#endif
 #ifdef HAL_GPIO_MODULE_ENABLED
     HAL_GPIO_InitComponent();
 #endif
@@ -299,14 +355,20 @@ HAL_StatusTypeDef HAL_DeInit(void)
  *       implementations in user file.
  * @retval tick value
  */
-uint32_t HAL_GetTick(void)
+__weak uint32_t HAL_GetTick(void)
 {
-#ifdef HAL_ATIMER_MODULE_ENABLED
+#ifdef HAL_TICK_ATIMER_ENABLED
     return (uint32_t)(HAL_ATimer_GetCounter(&s_sys_tim) / HAL_SYSTICK_FACTOR);
 #else
-    // TODO: Robin
-    //  return tx_time_get();
-    return 0;
+    /* Accumulate ticks via COUNTFLAG so this works without SysTick_Handler
+     * (e.g. under an RTOS that owns SysTick_Handler). When the bare-metal
+     * HAL_SysTick_Handler is active it also increments s_uwTick, so counts
+     * are never lost either way. */
+    if (SysTick->CTRL & SysTick_CTRL_COUNTFLAG_Msk)
+    {
+        s_uwTick++;
+    }
+    return s_uwTick;
 #endif
 }
 

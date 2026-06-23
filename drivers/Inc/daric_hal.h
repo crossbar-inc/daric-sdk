@@ -155,6 +155,7 @@ extern "C"
      */
     /* Peripheral Control functions
      * ************************************************/
+    HAL_StatusTypeDef HAL_TickInit(void);
     uint32_t HAL_GetTick(void);
     uint32_t HAL_GetUs(void);
     uint32_t HAL_GetMs(void);

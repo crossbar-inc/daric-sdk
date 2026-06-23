@@ -46,7 +46,7 @@ static int i2c_master_send(u8 addr, u8 *buf, u16 len)
         printf("%s: i2c state is not ready!\n", __func__);
         return -1;
     }
-    result = HAL_I2C_Transmit(&Touch_IIC, addr, buf, len, HAL_MAX_DELAY);
+    result = HAL_I2C_Transmit(&Touch_IIC,addr,buf,len,2000);
     if (HAL_OK != result)
     {
         printf("HAL_I2C_Transmit faile\n");
@@ -66,7 +66,7 @@ static int i2c_master_recv(u8 addr, u8 *buf, u16 len)
         return -1;
     }
 
-    result = HAL_I2C_Receive(&Touch_IIC, addr, buf, len, HAL_MAX_DELAY);
+    result = HAL_I2C_Receive(&Touch_IIC,addr,buf,len,2000);
     if (HAL_OK != result)
     {
         printf("HAL_I2C_Receive faile\n");

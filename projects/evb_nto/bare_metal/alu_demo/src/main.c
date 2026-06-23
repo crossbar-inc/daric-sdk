@@ -319,7 +319,12 @@ int main(void)
     printf("\nHello daric alu demo. Build @ %s %s.\n", __DATE__, __TIME__);
 
     HAL_Init();
+    HAL_TickInit();
+    HAL_ClockConfig(HAL_CPU_FREQSEL_700MHZ);
+    clkAnalysis();
 
+    printf("\nDelay 2 seconds.\n");
+    HAL_Delay(2000);
     printf("Starting Baremetal ALU Demo...\n");
 
     run_div_test();

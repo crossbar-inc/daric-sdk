@@ -754,9 +754,9 @@ void clkAnalysis()
     t0               = DARIC_IPC->pll_mn;
     t1               = DARIC_IPC->pll_f;
     uint32_t M       = (t0 >> 12) & 0x1F;
-    uint64_t N       = t0 & 0xFFF;
+    uint32_t N       = t0 & 0xFFF;
     double   N_Float = (N << 24) | ((0 != (t1 & 0x01000000)) ? (t1 & 0x00ffffff) : 0);
-    printf("    M = %2" PRIu32 ", N %3" PRIu64 ", F  %07" PRIx32 ".\n", M, N, t1);
+    printf("    M = %2" PRIu32 ", N %3" PRIu32 ", F  %07" PRIx32 ".\n", M, N, t1);
     N_Float /= (double)0x01000000;
     t1          = DARIC_IPC->pll_q;
     double fvco = fclksysMHz / M * N_Float;

@@ -52,7 +52,7 @@ typedef struct {
     volatile uint32_t srambankerr;  // 20
 } DARIC_CORE_SRAMCFG_T;
 
-#define DARIC_CORE_SRAMCFG_BASE         0x40004000UL
+#define DARIC_CORE_SRAMCFG_BASE         0x40014000UL
 
 
 #define DARIC_RCU_RST_CHIP 0x40040080

@@ -41,6 +41,29 @@ typedef struct
     int     retry;
 } rfc6979_context;
 
-uint32_t rfc6979_nonce_fn(const uint32_t *msg, const uint32_t *key, const uint32_t *data, uint32_t *nonce);
+/**
+ * @brief Initialise an RFC 6979 HMAC-DRBG context.
+ * @param ctx: context to initialise
+ * @param msg: 32-byte message hash (big-endian)
+ * @param key: 32-byte private key (big-endian)
+ */
+void rfc6979_hmac_init(rfc6979_context *ctx, const uint32_t *msg, const uint32_t *key);
+
+/**
+ * @brief Generate the next deterministic nonce from an RFC 6979 context.
+ *        Each successive call produces a different nonce for the same (msg, key).
+ * @param ctx:       context previously initialised with rfc6979_hmac_init()
+ * @param nonce_out: [out] 32-byte nonce
+ */
+void rfc6979_hmac_generate(rfc6979_context *ctx, uint32_t *nonce_out);
+
+/**
+ * @brief One-shot RFC 6979 nonce generation.
+ * @param msg:   32-byte message hash (big-endian)
+ * @param key:   32-byte private key (big-endian)
+ * @param nonce: [out] 32-byte nonce
+ * @return 0 on success
+ */
+uint32_t rfc6979_nonce_fn(const uint32_t *msg, const uint32_t *key, uint32_t *nonce);
 #endif
 // #endif

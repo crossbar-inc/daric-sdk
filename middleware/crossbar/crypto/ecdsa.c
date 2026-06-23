@@ -35,6 +35,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "bn_util.h"
+#include "rfc6979.h"
 
 // #define ECDSA_DBG 1
 
@@ -168,10 +169,12 @@ void ecdsa_get_bip340_pubkey(curve_type curve, uint32_t *seckey, uint32_t *pubke
  * @param priv_key Private key as a big-endian byte array (32 bytes for
  *                 256-bit curves).
  * @param digest   Message hash as a big-endian byte array (32 bytes).
- * @param nonce_fn Nonce (k) generation callback.  Called as
- *                 @c nonce_fn(digest, priv_key, NULL, k); the @p data
- *                 argument is always passed as @c NULL, so the callback
- *                 must handle a NULL @p data pointer gracefully.
+ * @param nonce_fn Nonce (k) generation callback, called as @c nonce_fn(k).
+ *                 Pass @c NULL to use the built-in RFC 6979 deterministic
+ *                 nonce generator.
+ *                 The callback may return any 32-byte value; nonces that are
+ *                 zero or >= the curve order are silently skipped and the
+ *                 callback is invoked again.
  * @param sig      [out] Signature output: r || s, each 32 bytes, big-endian.
  * @return 0 on success, -1 if the nonce function returns an error.
  *
@@ -195,20 +198,38 @@ int32_t ecdsa_sign_digest(curve_type curve, const uint32_t *priv_key, const uint
     uint32_t nonce[8];
     uint32_t nonce_le[8];
     uint32_t priv[8], dig[8];
+    rfc6979_context rfc6979_ctx;
 
     cv_get_order_le(curve, order);
     cv_get_order_half_le(curve, order_half);
     bnu_swap_endian_2(priv_key, priv, 32);
     bnu_swap_endian_2(digest, dig, 32);
 
+    if (nonce_fn == NULL)
+    {
+        rfc6979_hmac_init(&rfc6979_ctx, digest, priv_key);
+    }
+
     for (int i = 0; i < 10000; i++)
     {
-        if (0 != nonce_fn(digest, priv_key, NULL, nonce))
+        if (nonce_fn != NULL)
         {
-            return -1;
+            if (0 != nonce_fn(nonce))
+            {
+                return -1;
+            }
+        }
+        else
+        {
+            rfc6979_hmac_generate(&rfc6979_ctx, nonce);
         }
         bnu_swap_endian_1(nonce, 32);
         memcpy(nonce_le, nonce, 32);
+
+        if (num_256_is_zero((uint8_t *)nonce_le) || !num_256_is_less((uint8_t *)nonce_le, (uint8_t *)order))
+        {
+            continue;
+        }
 
         /* R */
         scalar_multiply_le(curve, (uint32_t *)nonce, (uint32_t *)&r);

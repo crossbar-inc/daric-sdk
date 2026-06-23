@@ -54,7 +54,7 @@
 #ifdef CONFIG_BOARD_EVB2
 #include "daric_evb2_ts.h"
 #endif
-#if defined(CONFIG_BOARD_ACTIVECARD_NTO) || defined(CONFIG_BOARD_ACTIVECARD_NTO_DVT2)
+#if defined (CONFIG_BOARD_ACTIVECARD_NTO) || defined (CONFIG_BOARD_ACTIVECARD_NTO_DVT2) || defined (CONFIG_BOARD_ACTIVECARD_NTO_DVT3)
 #include "daric_activecard_nto_ts.h"
 #endif
 #ifdef CONFIG_BOARD_EVB_NTO

@@ -478,7 +478,12 @@ int main(void)
     printf("\nHello daric hash demo. Build @ %s %s.\n", __DATE__, __TIME__);
 
     HAL_Init();
+    HAL_TickInit();
+    HAL_ClockConfig(HAL_CPU_FREQSEL_700MHZ);
+    clkAnalysis();
 
+    printf("\nDelay 2 seconds.\n");
+    HAL_Delay(2000);
     printf("Starting Baremetal Hash Demo...\n");
     run_hash_test();
     while (1)

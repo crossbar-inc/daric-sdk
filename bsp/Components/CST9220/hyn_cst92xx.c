@@ -121,7 +121,7 @@ static int32_t cst92xx_init(uint32_t instance, struct hyn_ts_data *ts_data)
         return FALSE;
     }
     cst92xx_rst();
-    msleep(40);
+    msleep(60);
     ret = cst92xx_updata_tpinfo();
     if (ret == FALSE)
     {

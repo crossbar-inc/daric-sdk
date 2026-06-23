@@ -51,11 +51,10 @@
 #include "nfc_config.h"
 #include "port_hardware.h"
 #include "trace.h"
+#include "tx_api.h"
 #include "port_os.h"
 #include "firmware.h"
 #include "firmware_update.h"
-#include "port_hardware.h"
-#include "tx_api.h"
 #include <ctype.h>
 #include <string.h>
 #include <stdio.h>

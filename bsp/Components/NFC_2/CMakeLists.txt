@@ -3,8 +3,7 @@ add_library(NFC STATIC)
 
 target_link_libraries(NFC PRIVATE configs)
 
-target_link_libraries(NFC PUBLIC device)
-target_link_libraries(NFC PRIVATE driver)
+target_link_libraries(NFC PUBLIC driver)
 target_link_libraries(NFC PRIVATE threadx)
 target_link_libraries(NFC PRIVATE filex)
 if(CONFIG_SUPPORT_NFC)

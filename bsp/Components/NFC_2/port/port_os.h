@@ -42,8 +42,9 @@
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __PORT_OS_H__
 #define __PORT_OS_H__
-#include "nfc_type.h"
-#include "port.h"
+
+#include <stdint.h>
+#include "tx_api.h"
 
 
 #define FREERTOS_TOTAL_HEAP_SIZE        (15*1024)
